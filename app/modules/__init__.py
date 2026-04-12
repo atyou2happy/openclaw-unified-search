@@ -27,10 +27,15 @@ def auto_register():
     """自动导入并注册所有模块"""
     from app.modules import (
         tabbit, web, github, pdf, docs, academic,
-        jina, wiki, brave, tavily, serper,  # noqa: F401
+        jina, wiki, brave, tavily, serper, searxng,  # noqa: F401
     )
 
     modules = []
+
+    # SearXNG (聚合搜索，247+引擎)
+    m = searxng.SearXNGModule()
+    register(m)
+    modules.append(m)
 
     # TabBitBrowser
     m = tabbit.TabBitModule()
