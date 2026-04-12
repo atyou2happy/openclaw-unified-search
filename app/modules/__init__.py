@@ -29,7 +29,7 @@ def list_names() -> list[str]:
 
 def auto_register():
     """自动导入并注册所有模块"""
-    from app.modules import tabbit, web, github, pdf, docs, academic, fastcode  # noqa: F401
+    from app.modules import tabbit, web, github, pdf, docs, academic  # noqa: F401
 
     modules = []
 
@@ -38,7 +38,7 @@ def auto_register():
     register(m)
     modules.append(m)
 
-    # DuckDuckGo Web Search
+    # Web Search (TabBit 优先, DDG 备用)
     m = web.WebSearchModule()
     register(m)
     modules.append(m)
@@ -60,11 +60,6 @@ def auto_register():
 
     # Academic
     m = academic.AcademicModule()
-    register(m)
-    modules.append(m)
-
-    # FastCode (代码仓库深度分析)
-    m = fastcode.FastCodeModule()
     register(m)
     modules.append(m)
 
