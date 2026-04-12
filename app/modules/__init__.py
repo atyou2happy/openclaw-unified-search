@@ -25,7 +25,7 @@ def list_names() -> list[str]:
 
 def auto_register():
     """自动导入并注册所有模块"""
-    from app.modules import tabbit, web, github, pdf, docs, academic, jina  # noqa: F401
+    from app.modules import tabbit, web, github, pdf, docs, academic, jina, wiki  # noqa: F401
 
     modules = []
 
@@ -60,6 +60,11 @@ def auto_register():
     modules.append(m)
 
     # Academic
+
+    # Wiki (百度百科 + 维基百科)
+    m = wiki.WikiModule()
+    register(m)
+    modules.append(m)
     m = academic.AcademicModule()
     register(m)
     modules.append(m)
