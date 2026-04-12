@@ -20,6 +20,10 @@ class Config:
     DEFAULT_MAX_RESULTS: int = 10
     MAX_CONCURRENT_MODULES: int = 10
 
+    # Proxy (for WSL / restricted networks)
+    # Set HTTP_PROXY / HTTPS_PROXY env vars, or configure here
+    PROXY_URL: str | None = None  # e.g. "http://127.0.0.1:7890"
+
     # TabBitBrowser
     TABBIT_CDP_PORT: int = 9222
     TABBIT_TIMEOUT: int = 120
@@ -40,3 +44,15 @@ class Config:
 
     # Academic
     SEMANTIC_SCHOLAR_API_KEY: str | None = None
+
+    @classmethod
+    def get_proxy(cls) -> str | None:
+        """Get proxy URL from config or env"""
+        import os
+        return (
+            cls.PROXY_URL
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("http_proxy")
+        )

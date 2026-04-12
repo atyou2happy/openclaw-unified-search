@@ -1,8 +1,19 @@
 """Web search module — TabBitBrowser 优先, DDG 降级备用."""
+from app.config import Config
+
+def _proxy_client(**kwargs):
+    proxy = Config.get_proxy()
+    if proxy: kwargs["proxy"] = proxy
+    return httpx.AsyncClient(**kwargs)
 
 import asyncio
 import sys
 from app.config import Config
+
+def _proxy_client(**kwargs):
+    proxy = Config.get_proxy()
+    if proxy: kwargs["proxy"] = proxy
+    return httpx.AsyncClient(**kwargs)
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
 
@@ -22,7 +33,7 @@ class WebSearchModule(BaseSearchModule):
     async def _check_tabbit(self) -> bool:
         import httpx
         try:
-            async with httpx.AsyncClient() as client:
+            async with _proxy_client() as client:
                 resp = await client.get(
                     f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
                     timeout=5
@@ -59,7 +70,7 @@ class WebSearchModule(BaseSearchModule):
         import httpx
 
         enriched = []
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        async with _proxy_client(timeout=15, follow_redirects=True) as client:
             for r in results[:5]:
                 try:
                     resp = await client.get(r.url)

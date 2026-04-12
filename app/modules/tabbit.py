@@ -1,9 +1,7 @@
 """TabBitBrowser search module — 核心 AI 搜索."""
 
 import asyncio
-import json
 import sys
-import subprocess
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
@@ -21,11 +19,14 @@ class TabBitModule(BaseSearchModule):
     async def health_check(self) -> bool:
         """检查 TabBitBrowser CDP 端口是否可达"""
         import httpx
+        proxy = Config.get_proxy()
+        kwargs = {"timeout": 5}
+        if proxy:
+            kwargs["proxy"] = proxy
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(**kwargs) as client:
                 resp = await client.get(
                     f"http://localhost:{self._cdp_port}/json",
-                    timeout=5
                 )
                 return resp.status_code == 200
         except Exception:
@@ -51,7 +52,6 @@ class TabBitModule(BaseSearchModule):
             )
 
             if proc.returncode != 0:
-                error_msg = stderr.decode("utf-8", errors="replace")[-200:]
                 self._available = False
                 return []
 
