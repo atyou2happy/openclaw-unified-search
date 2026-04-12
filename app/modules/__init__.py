@@ -27,13 +27,24 @@ def auto_register():
     """自动导入并注册所有模块"""
     from app.modules import (
         tabbit, web, github, pdf, docs, academic,
-        jina, wiki, brave, tavily, serper, searxng,  # noqa: F401
+        jina, wiki, brave, tavily, serper, searxng,
+        metaso, phind,  # noqa: F401
     )
 
     modules = []
 
     # SearXNG (聚合搜索，247+引擎)
     m = searxng.SearXNGModule()
+    register(m)
+    modules.append(m)
+
+    # 秘塔AI搜索 (中文最强)
+    m = metaso.MetasoModule()
+    register(m)
+    modules.append(m)
+
+    # Phind (程序员搜索)
+    m = phind.PhindModule()
     register(m)
     modules.append(m)
 
