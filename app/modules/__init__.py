@@ -25,7 +25,10 @@ def list_names() -> list[str]:
 
 def auto_register():
     """自动导入并注册所有模块"""
-    from app.modules import tabbit, web, github, pdf, docs, academic, jina, wiki  # noqa: F401
+    from app.modules import (
+        tabbit, web, github, pdf, docs, academic,
+        jina, wiki, brave, tavily, serper,  # noqa: F401
+    )
 
     modules = []
 
@@ -39,12 +42,12 @@ def auto_register():
     register(m)
     modules.append(m)
 
-    # Jina Reader (免费搜索+内容提取)
+    # Jina Reader (网页内容提取)
     m = jina.JinaModule()
     register(m)
     modules.append(m)
 
-    # GitHub
+    # GitHub + Zread.ai
     m = github.GitHubModule()
     register(m)
     modules.append(m)
@@ -60,12 +63,27 @@ def auto_register():
     modules.append(m)
 
     # Academic
+    m = academic.AcademicModule()
+    register(m)
+    modules.append(m)
 
     # Wiki (百度百科 + 维基百科)
     m = wiki.WikiModule()
     register(m)
     modules.append(m)
-    m = academic.AcademicModule()
+
+    # Brave Search (需 BRAVE_API_KEY)
+    m = brave.BraveModule()
+    register(m)
+    modules.append(m)
+
+    # Tavily (需 TAVILY_API_KEY)
+    m = tavily.TavilyModule()
+    register(m)
+    modules.append(m)
+
+    # Serper.dev (需 SERPER_API_KEY)
+    m = serper.SerperModule()
     register(m)
     modules.append(m)
 
