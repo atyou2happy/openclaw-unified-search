@@ -37,6 +37,15 @@ class SearchEngine:
         else:
             modules = dict(self._modules)
 
+        # No matching modules — return empty
+        if not modules:
+            elapsed = time.time() - start
+            return SearchResponse(
+                query=request.query,
+                elapsed=round(elapsed, 3),
+                errors={"engine": "No matching modules found"},
+            )
+
         # Parallel search with per-module timeout
         tasks = {}
         for name, module in modules.items():
