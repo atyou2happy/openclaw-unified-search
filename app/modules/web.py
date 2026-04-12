@@ -1,21 +1,20 @@
-"""Web search module — TabBitBrowser 优先, DDG 降级备用."""
-from app.config import Config
-
-def _proxy_client(**kwargs):
-    proxy = Config.get_proxy()
-    if proxy: kwargs["proxy"] = proxy
-    return httpx.AsyncClient(**kwargs)
+"""Web search module — TabBitBrowser 优先, DDG 备用."""
 
 import asyncio
 import sys
 from app.config import Config
+from app.models import SearchRequest, SearchResult
+from app.modules.base import BaseSearchModule
+
 
 def _proxy_client(**kwargs):
     proxy = Config.get_proxy()
-    if proxy: kwargs["proxy"] = proxy
+    if proxy:
+        kwargs["proxy"] = proxy
     return httpx.AsyncClient(**kwargs)
-from app.models import SearchRequest, SearchResult
-from app.modules.base import BaseSearchModule
+
+
+import httpx
 
 
 class WebSearchModule(BaseSearchModule):
@@ -27,16 +26,13 @@ class WebSearchModule(BaseSearchModule):
         self._tabbit_available: bool | None = None
 
     async def health_check(self) -> bool:
-        """TabBit 或 DDG 任一可用即可"""
         return await self._check_tabbit() or await self._check_ddg()
 
     async def _check_tabbit(self) -> bool:
-        import httpx
         try:
-            async with _proxy_client() as client:
+            async with _proxy_client(timeout=5) as client:
                 resp = await client.get(
                     f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
-                    timeout=5
                 )
                 return resp.status_code == 200
         except Exception:
@@ -46,14 +42,14 @@ class WebSearchModule(BaseSearchModule):
     async def _check_ddg() -> bool:
         try:
             from ddgs import DDGS
-            with DDGS() as d:
+            proxy = Config.get_proxy()
+            with DDGS(proxy=proxy) as d:
                 list(d.text("ping", max_results=1))
             return True
         except Exception:
             return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        # 策略: TabBitBrowser 优先, DDG 备用
         if await self._check_tabbit():
             results = await self._search_tabbit(request)
             if results:
@@ -67,7 +63,6 @@ class WebSearchModule(BaseSearchModule):
             return results
 
         import trafilatura
-        import httpx
 
         enriched = []
         async with _proxy_client(timeout=15, follow_redirects=True) as client:
@@ -83,7 +78,6 @@ class WebSearchModule(BaseSearchModule):
         return enriched
 
     async def _search_tabbit(self, request: SearchRequest) -> list[SearchResult]:
-        """通过 CDP 脚本调用 TabBitBrowser"""
         timeout = min(request.timeout, Config.TABBIT_TIMEOUT)
         max_chars = 8000 if request.depth == "deep" else 5000
 
@@ -121,12 +115,12 @@ class WebSearchModule(BaseSearchModule):
 
     @staticmethod
     async def _search_ddg(request: SearchRequest) -> list[SearchResult]:
-        """DDG 降级搜索"""
         region = "cn-zh" if request.language in ("zh", "auto") else "us-en"
         try:
             from ddgs import DDGS
+            proxy = Config.get_proxy()
             results = []
-            with DDGS() as ddgs:
+            with DDGS(proxy=proxy) as ddgs:
                 for r in ddgs.text(
                     request.query,
                     region=region,

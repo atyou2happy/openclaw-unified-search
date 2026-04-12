@@ -1,4 +1,4 @@
-"""Jina Reader module — 免费网页搜索+内容提取，无需API key."""
+"""Jina Reader module — 免费网页内容提取（r.jina.ai，无需API key）."""
 
 import httpx
 from app.config import Config
@@ -6,93 +6,71 @@ from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
 
 
-def _get_client(timeout: int = 15) -> httpx.AsyncClient:
-    proxy = Config.get_proxy()
-    kwargs = {"timeout": timeout}
-    if proxy:
-        kwargs["proxy"] = proxy
-    return httpx.AsyncClient(**kwargs)
-
-
 class JinaModule(BaseSearchModule):
     name = "jina"
-    description = "Jina Reader 免费网页搜索+内容提取（无需API key）"
+    description = "Jina Reader 网页内容提取（无需API key）"
 
-    SEARCH_URL = "https://s.jina.ai/"
     READ_URL = "https://r.jina.ai/"
 
     async def health_check(self) -> bool:
         try:
-            async with _get_client(10) as client:
+            proxy = Config.get_proxy()
+            kwargs = {"timeout": 10}
+            if proxy:
+                kwargs["proxy"] = proxy
+            async with httpx.AsyncClient(**kwargs) as client:
                 resp = await client.get(
-                    self.SEARCH_URL,
-                    headers={"Accept": "application/json"},
-                    params={"q": "ping", "num": 1},
+                    f"{self.READ_URL}https://example.com",
+                    headers={"Accept": "text/plain"},
                 )
                 return resp.status_code == 200
         except Exception:
             return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        try:
-            headers = {"Accept": "application/json"}
-            params = {
-                "q": request.query,
-                "num": min(request.max_results, 20),
-            }
-
-            async with _get_client(request.timeout) as client:
-                resp = await client.get(
-                    self.SEARCH_URL,
-                    headers=headers,
-                    params=params,
-                )
-
-                if resp.status_code != 200:
-                    return []
-
-                data = resp.json()
-                results = []
-                for item in data.get("data", []):
-                    title = item.get("title", "")
-                    url = item.get("url", "")
-                    snippet = item.get("description", "") or item.get("content", "")[:300]
-                    content = item.get("content", "")
-
-                    results.append(SearchResult(
-                        title=title,
-                        url=url,
-                        snippet=snippet[:500],
-                        content=content[:8000] if request.depth != "quick" else "",
-                        source=self.name,
-                        relevance=0.85,
-                    ))
-                return results
-
-        except Exception:
-            return []
-
-    async def search_content(self, request: SearchRequest) -> list[SearchResult]:
+        """提取 URL 内容（query 应为 URL），或搜索关键词后提取"""
         query = request.query.strip()
 
         if query.startswith("http"):
             return await self._read_url(query, request)
 
-        results = await self.search(request)
-        if request.depth != "deep" or not results:
-            return results
+        # 非URL：先DDG搜索获取URL，再提取内容
+        return await self._search_and_read(request)
 
-        enriched = []
-        for r in results[:3]:
-            read_results = await self._read_url(r.url, request)
-            if read_results:
-                r.content = read_results[0].content
-            enriched.append(r)
-        return enriched
+    async def _search_and_read(self, request: SearchRequest) -> list[SearchResult]:
+        """搜索关键词后提取 Top 结果内容"""
+        try:
+            from ddgs import DDGS
+            proxy = Config.get_proxy()
+            urls = []
+            with DDGS(proxy=proxy) as ddgs:
+                for r in ddgs.text(request.query, max_results=request.max_results):
+                    if r.get("href"):
+                        urls.append((r.get("title", ""), r.get("href")))
+
+            results = []
+            for title, url in urls[:5]:
+                read = await self._read_url(url, request)
+                if read:
+                    read[0].title = title or read[0].title
+                    results.extend(read)
+                else:
+                    results.append(SearchResult(
+                        title=title, url=url,
+                        snippet="", source=self.name, relevance=0.6,
+                    ))
+            return results
+        except Exception:
+            return []
 
     async def _read_url(self, url: str, request: SearchRequest) -> list[SearchResult]:
+        """提取单个 URL 的完整内容"""
         try:
-            async with _get_client(30) as client:
+            proxy = Config.get_proxy()
+            kwargs = {"timeout": 30}
+            if proxy:
+                kwargs["proxy"] = proxy
+            async with httpx.AsyncClient(**kwargs) as client:
                 resp = await client.get(
                     f"{self.READ_URL}{url}",
                     headers={"Accept": "text/plain"},
