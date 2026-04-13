@@ -288,22 +288,24 @@ class ResultMerger:
         "phind.com",
     }
 
-    # source 模块类型权重 (v3)
+    # source 模块类型权重 (v3) - 质量优先
     SOURCE_WEIGHTS = {
-        "metaso": 1.3,  # AI 深度答案
+        "tabbit": 1.4,  # 核心模块，最高优先级
+        "metaso": 1.35,  # AI 深度答案
         "phind_answer": 1.3,  # AI 编程答案
-        "tavily_answer": 1.3,  # AI 答案
         "perplexity": 1.3,  # AI 答案
         "perplexity_cite": 1.2,
-        "searxng": 1.0,
-        "tabbit": 1.0,
+        "tavily_answer": 1.25,
+        "you_ai": 1.15,
         "github": 1.1,
         "academic": 1.1,
         "wiki": 1.05,
-        "you_ai": 1.15,
+        "searxng": 1.0,
         "ddg": 0.95,
+        "brave": 0.95,
         "bing": 0.95,
         "bing_news": 0.95,
+        "serper": 0.95,
         "web": 0.9,
     }
 
@@ -425,23 +427,27 @@ class SearchEngine:
                 errors={"engine": "No matching modules found"},
             )
 
-        # 3. 按速度排序 - 快的模块先查
-        speed_order = [
-            "wiki",
-            "academic",
-            "github",
-            "searxng",
-            "ddg",
-            "brave",
-            "bing",
-            "tavily",
-            "serper",
-            "tabbit",
-            "web",
+        # 3. 质量优先排序 - tabbit优先，高质量模块靠前
+        quality_order = [
+            "tabbit",  # 核心模块，始终优先
+            "metaso",  # AI深度答案
+            "phind",  # 编程答案
+            "perplexity",  # AI答案
+            "you",  # AI增强
+            "tavily",  # AI优化
+            "academic",  # 学术
+            "github",  # 代码
+            "wiki",  # 知识
+            "searxng",  # 聚合
+            "ddg",  # 免费
+            "brave",  # 企业
+            "bing",  # 微软
+            "serper",  # Google
+            "web",  # 兜底
         ]
-        fast_modules = [m for m in speed_order if m in selected]
-        slow_modules = [m for m in selected if m not in fast_modules]
-        ordered = fast_modules + slow_modules
+        ordered = [m for m in quality_order if m in selected]
+        other_modules = [m for m in selected if m not in ordered]
+        ordered = ordered + other_modules
 
         # 4. 并行搜索 - FIRST_COMPLETED 模式
         all_results: list[SearchResult] = []
@@ -454,7 +460,7 @@ class SearchEngine:
             try:
                 results = await asyncio.wait_for(
                     self._safe_search(module, request),
-                    timeout=min(request.timeout * 0.6, 15),
+                    timeout=min(request.timeout * 0.5, 12),
                 )
                 if results:
                     all_results.extend(results)
@@ -468,14 +474,13 @@ class SearchEngine:
                 errors[name] = str(e)
 
         # 5. 后台等待其他模块（不阻塞）
-        for name in slow_modules:
-            if name in sources_used:
-                continue
+        remaining = [m for m in selected if m not in sources_used]
+        for name in remaining:
             module = self._modules[name]
             try:
                 results = await asyncio.wait_for(
                     self._safe_search(module, request),
-                    timeout=max(5, request.timeout - sum(all_results)),
+                    timeout=max(3, request.timeout * 0.3),
                 )
                 if results:
                     all_results.extend(results)
