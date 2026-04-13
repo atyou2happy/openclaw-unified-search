@@ -9,9 +9,27 @@ from app.cache import cache
 router = APIRouter()
 
 
+@router.get("/health")
+async def health():
+    """服务健康检查"""
+    modules = get_all()
+    available = 0
+    for m in modules.values():
+        try:
+            if await m.is_available():
+                available += 1
+        except Exception:
+            pass
+    return {
+        "status": "ok",
+        "modules_total": len(modules),
+        "modules_available": available,
+    }
+
+
 @router.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
-    """统一搜索 — 并行调用所有可用模块"""
+    """统一搜索 — 智能调度 + 并行调用"""
     return await engine.search(request)
 
 
@@ -27,7 +45,10 @@ async def list_modules():
     modules = get_all()
     statuses = []
     for name, mod in modules.items():
-        available = await mod.is_available()
+        try:
+            available = await mod.is_available()
+        except Exception:
+            available = False
         statuses.append(ModuleStatus(
             name=name,
             description=mod.description,
@@ -43,24 +64,15 @@ async def module_status(name: str):
     mod = get(name)
     if not mod:
         raise HTTPException(status_code=404, detail=f"Module '{name}' not found")
-    available = await mod.is_available()
+    try:
+        available = await mod.is_available()
+    except Exception:
+        available = False
     return ModuleStatus(
         name=name,
         description=mod.description,
         available=available,
     )
-
-
-@router.get("/health")
-async def health():
-    """服务健康检查"""
-    modules = get_all()
-    available = sum(1 for m in modules.values() if await m.is_available())
-    return {
-        "status": "ok",
-        "modules_total": len(modules),
-        "modules_available": available,
-    }
 
 
 @router.get("/cache/stats")

@@ -43,13 +43,6 @@ class QueryIntent:
             "speed": "slow",
             "quality": 0.95,
         },
-        "phind": {
-            "types": {"code", "tech"},
-            "langs": {"en", "zh"},
-            "speed": "slow",
-            "quality": 0.9,
-        },
-        "tabbit": {
             "types": {"general", "research", "code", "academic", "news", "knowledge"},
             "langs": {"zh", "en"},
             "speed": "medium",
@@ -328,16 +321,14 @@ class ResultMerger:
         "pypi.org",
         "crates.io",
         "metaso.cn",
-        "phind.com",
-        "perplexity.ai",
+                "perplexity.ai",
     }
 
     # source 模块类型权重 (v4 — AI 答案最高)
     SOURCE_WEIGHTS = {
         "tabbit": 1.5,  # 核心模块，最高优先级
         "metaso": 1.4,  # AI 深度答案
-        "phind_answer": 1.35,  # AI 编程答案
-        "perplexity": 1.35,  # AI 答案
+                "perplexity": 1.35,  # AI 答案
         "perplexity_cite": 1.2,
         "tavily_answer": 1.3,
         "you_ai": 1.2,
