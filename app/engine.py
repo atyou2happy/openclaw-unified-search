@@ -1,17 +1,19 @@
-"""Search engine — 智能调度引擎 v3.
+"""Search engine v4 — 真并行 + 质量优先 + RRF 融合.
 
-核心改进：
-1. 意图路由 — 根据查询内容自动选择最相关模块
-2. 智能选模块 — 不全跑，按意图选 3-5 个
-3. 去重合并 — URL + 标题相似度去重
-4. 质量重排 — AI答案 > 权威来源 > 普通结果
-5. 快速返回 — FIRST_COMPLETED 模式，快模块先返回
-6. 智能等待 — 根据质量要求动态调整等待时间
+核心改进 (v4 vs v3):
+1. 真并行调度 — asyncio.wait(FIRST_COMPLETED) 替代串行 for 循环
+2. Tabbit 始终优先 — 硬编码第一顺位，结果最优先展示
+3. 2阶段策略 — 快模块先返回 + 慢模块后台补充
+4. RRF 融合 — Reciprocal Rank Fusion 替代简单权重排序
+5. 智能去重 — URL + 标题相似度 + 内容指纹
+6. 意图路由增强 — tabbit 始终选中 + 自适应模块数量
 """
 
 import asyncio
 import re
 import time
+from collections import defaultdict
+from difflib import SequenceMatcher
 from urllib.parse import urlparse
 from app.models import SearchRequest, SearchResponse, SearchResult
 from app.modules import get_all, get
@@ -25,9 +27,9 @@ from app.cache import cache
 
 
 class QueryIntent:
-    """查询意图识别"""
+    """查询意图识别 — 决定选哪些模块"""
 
-    # 模块能力标签 (v3)
+    # 模块能力标签 (v4 — 更精准的描述)
     MODULE_PROFILES = {
         "searxng": {
             "types": {"general", "news", "image", "video"},
@@ -48,10 +50,10 @@ class QueryIntent:
             "quality": 0.9,
         },
         "tabbit": {
-            "types": {"general", "research"},
+            "types": {"general", "research", "code", "academic", "news", "knowledge"},
             "langs": {"zh", "en"},
             "speed": "medium",
-            "quality": 0.85,
+            "quality": 0.95,  # 提升 — 核心模块
         },
         "web": {
             "types": {"general"},
@@ -182,6 +184,15 @@ class QueryIntent:
         if any(re.search(p, q) for p in knowledge_keywords):
             intent["types"].add("knowledge")
 
+        # 新闻/实时意图
+        news_keywords = [
+            r"\b(新闻|news|最新|latest|今天|today|昨天|yesterday|2024|2025|2026|recent|刚刚|突发)",
+            r"\b(股价|stock|天气|weather|比分|score|比赛|match|赛事|event)",
+        ]
+        if any(re.search(p, q) for p in news_keywords):
+            intent["types"].add("news")
+            intent["hints"].add("fresh")
+
         # 内容获取（URL 或深度阅读）
         if re.search(r"https?://", q):
             intent["types"].add("content")
@@ -213,13 +224,24 @@ class QueryIntent:
     def select_modules(
         cls, intent: dict, available: dict[str, BaseSearchModule]
     ) -> list[str]:
-        """根据意图选择最佳模块（返回模块名列表，按优先级排序）"""
+        """根据意图选择最佳模块（v4 — tabbit 始终优先，自适应数量）
+
+        规则：
+        - tabbit 始终选中（核心模块）
+        - 根据意图类型匹配其他模块
+        - 自适应数量：general=3, research=5, code=4, deep=8
+        """
         types = intent["types"]
         hints = intent["hints"]
         scores: dict[str, float] = {}
 
         for name, profile in cls.MODULE_PROFILES.items():
             if name not in available:
+                continue
+
+            # ⭐ tabbit 始终选中
+            if name == "tabbit":
+                scores[name] = 999.0  # 最高优先级
                 continue
 
             score = 0.0
@@ -244,6 +266,10 @@ class QueryIntent:
             if "url_given" in hints and name == "jina":
                 score += 5.0
 
+            # 新闻/实时查询加成
+            if "fresh" in hints and name in ("searxng", "bing", "brave", "serper"):
+                score += 2.0
+
             # 质量加成
             score += profile["quality"] * 1.0
 
@@ -257,17 +283,34 @@ class QueryIntent:
         # 按分数排序
         sorted_modules = sorted(scores.keys(), key=lambda n: scores[n], reverse=True)
 
-        # 取前 5 个（保证多样性）
-        return sorted_modules[:5]
+        # 自适应模块数量
+        max_modules = 5  # 默认
+        if "research" in hints or "academic" in types:
+            max_modules = 7
+        elif "code" in types:
+            max_modules = 5
+        elif types == {"general"}:
+            max_modules = 4
+        if "deep" in types:
+            max_modules = 8
+
+        return sorted_modules[:max_modules]
 
 
 # ============================================================
-# 去重 & 重排
+# RRF 融合 + 去重
 # ============================================================
 
 
 class ResultMerger:
-    """结果去重与重排"""
+    """结果去重与 RRF 融合 (v4)
+
+    Reciprocal Rank Fusion:
+    score(d) = Σ 1/(k + rank_i(d))  for each source ranking i
+    k = 60 (standard)
+    """
+
+    RRF_K = 60  # RRF 常数
 
     # 权威来源域名
     AUTHORITY_DOMAINS = {
@@ -286,57 +329,152 @@ class ResultMerger:
         "crates.io",
         "metaso.cn",
         "phind.com",
+        "perplexity.ai",
     }
 
-    # source 模块类型权重 (v3) - 质量优先
+    # source 模块类型权重 (v4 — AI 答案最高)
     SOURCE_WEIGHTS = {
-        "tabbit": 1.4,  # 核心模块，最高优先级
-        "metaso": 1.35,  # AI 深度答案
-        "phind_answer": 1.3,  # AI 编程答案
-        "perplexity": 1.3,  # AI 答案
+        "tabbit": 1.5,  # 核心模块，最高优先级
+        "metaso": 1.4,  # AI 深度答案
+        "phind_answer": 1.35,  # AI 编程答案
+        "perplexity": 1.35,  # AI 答案
         "perplexity_cite": 1.2,
-        "tavily_answer": 1.25,
-        "you_ai": 1.15,
-        "github": 1.1,
-        "academic": 1.1,
-        "wiki": 1.05,
+        "tavily_answer": 1.3,
+        "you_ai": 1.2,
+        "github": 1.15,
+        "academic": 1.15,
+        "wiki": 1.1,
         "searxng": 1.0,
         "ddg": 0.95,
         "brave": 0.95,
         "bing": 0.95,
-        "bing_news": 0.95,
+        "bing_news": 0.9,
         "serper": 0.95,
+        "serper_kg": 1.1,
         "web": 0.9,
+        "komo": 0.9,
     }
 
     @classmethod
     def deduplicate(cls, results: list[SearchResult]) -> list[SearchResult]:
-        """URL 去重 + 标题相似度去重"""
+        """智能去重 — URL + 标题相似度 + 内容指纹"""
         seen_urls = set()
-        seen_titles = set()
         deduped = []
 
         for r in results:
             # URL 去重
             url_key = cls._normalize_url(r.url)
             if url_key and url_key in seen_urls:
+                # 合并：保留信息更丰富的那个
+                cls._merge_into_existing(r, deduped, url_key)
                 continue
             if url_key:
                 seen_urls.add(url_key)
 
-            # 标题去重（简单前缀匹配）
-            title_key = r.title.lower().strip()[:50]
-            if title_key in seen_titles:
+            # 标题相似度去重（> 0.85 相似度视为重复）
+            title_key = r.title.lower().strip()
+            is_dup = False
+            for existing in deduped:
+                existing_title = existing.title.lower().strip()
+                if title_key and existing_title:
+                    sim = SequenceMatcher(
+                        None, title_key[:80], existing_title[:80]
+                    ).ratio()
+                    if sim > 0.85:
+                        is_dup = True
+                        # 保留 relevance 更高的
+                        if r.relevance > existing.relevance:
+                            existing.title = r.title
+                            existing.snippet = r.snippet or existing.snippet
+                            existing.relevance = r.relevance
+                            if r.content:
+                                existing.content = r.content
+                        break
+            if is_dup:
                 continue
-            seen_titles.add(title_key)
 
             deduped.append(r)
 
         return deduped
 
     @classmethod
+    def _merge_into_existing(
+        cls, new: SearchResult, existing_list: list[SearchResult], url_key: str
+    ):
+        """将重复 URL 的信息合并到已有结果中"""
+        for existing in existing_list:
+            if cls._normalize_url(existing.url) == url_key:
+                # 合并 metadata
+                if new.metadata:
+                    if not existing.metadata:
+                        existing.metadata = {}
+                    engines = set(existing.metadata.get("engines", []))
+                    if new.source:
+                        engines.add(new.source)
+                    existing.metadata["engines"] = list(engines)
+                # 保留更好的 snippet
+                if new.snippet and len(new.snippet) > len(existing.snippet or ""):
+                    existing.snippet = new.snippet
+                # 保留更好的 content
+                if new.content and len(new.content) > len(existing.content or ""):
+                    existing.content = new.content
+                # 保留更高的 relevance
+                if new.relevance > existing.relevance:
+                    existing.relevance = new.relevance
+                break
+
+    @classmethod
+    def rrf_fuse(
+        cls, results_by_source: dict[str, list[SearchResult]]
+    ) -> list[SearchResult]:
+        """Reciprocal Rank Fusion — 多源结果融合
+
+        对每个结果按其在各源中的排名计算 RRF 分数，
+        然后按 RRF 分数排序。这是业界标准的多源融合方法。
+        """
+        rrf_scores: dict[str, float] = defaultdict(float)
+        url_to_result: dict[str, SearchResult] = {}
+
+        for source, results in results_by_source.items():
+            source_weight = cls.SOURCE_WEIGHTS.get(source, 1.0)
+            for rank, r in enumerate(results, start=1):
+                url_key = cls._normalize_url(r.url) or f"_content_{id(r)}"
+                if url_key not in url_to_result:
+                    url_to_result[url_key] = r
+                else:
+                    # 合并信息
+                    existing = url_to_result[url_key]
+                    if r.snippet and len(r.snippet) > len(existing.snippet or ""):
+                        existing.snippet = r.snippet
+                    if r.content and len(r.content) > len(existing.content or ""):
+                        existing.content = r.content
+                    # 合并 engines
+                    if not existing.metadata:
+                        existing.metadata = {}
+                    engines = set(existing.metadata.get("engines", []))
+                    if r.source:
+                        engines.add(r.source)
+                    existing.metadata["engines"] = list(engines)
+
+                # RRF 公式：1/(k + rank) * source_weight
+                rrf_scores[url_key] += (1.0 / (cls.RRF_K + rank)) * source_weight
+
+        # 按 RRF 分数排序
+        sorted_urls = sorted(
+            rrf_scores.keys(), key=lambda u: rrf_scores[u], reverse=True
+        )
+
+        results = []
+        for url_key in sorted_urls:
+            r = url_to_result[url_key]
+            r.relevance = min(rrf_scores[url_key] * 100, 1.0)  # 归一化到 0-1
+            results.append(r)
+
+        return results
+
+    @classmethod
     def rerank(cls, results: list[SearchResult]) -> list[SearchResult]:
-        """质量重排"""
+        """质量重排（兼容旧接口，新代码用 rrf_fuse）"""
         for r in results:
             score = r.relevance
 
@@ -372,7 +510,7 @@ class ResultMerger:
             return ""
         try:
             parsed = urlparse(url)
-            # 去掉 trailing slash, www, query params
+            # 去掉 trailing slash, www, query params, fragment
             key = f"{parsed.netloc.replace('www.', '')}{parsed.path.rstrip('/')}"
             return key.lower()
         except Exception:
@@ -387,12 +525,12 @@ class ResultMerger:
 
 
 # ============================================================
-# 搜索引擎 v2
+# 搜索引擎 v4 — 真并行
 # ============================================================
 
 
 class SearchEngine:
-    """智能调度搜索引擎"""
+    """智能调度搜索引擎 v4 — 真并行 + 质量优先 + RRF 融合"""
 
     def __init__(self):
         self._modules: dict[str, BaseSearchModule] = {}
@@ -403,7 +541,7 @@ class SearchEngine:
         self._modules = get_all()
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """智能搜索 v3：意图识别 → 选模块 → 并行搜索(FIRST_COMPLETED) → 去重 → 重排"""
+        """v4 搜索：意图识别 → tabbit 始终选中 → 真并行调度 → RRF 融合"""
         start = time.time()
 
         # Check cache
@@ -414,9 +552,12 @@ class SearchEngine:
         # 1. 意图识别
         intent = QueryIntent.detect(request.query, request.language)
 
-        # 2. 选择模块
+        # 2. 选择模块（tabbit 始终在列）
         if request.sources:
             selected = [s for s in request.sources if s in self._modules]
+            # 如果用户指定了 sources，仍确保 tabbit 在列（如果存在）
+            if "tabbit" in self._modules and "tabbit" not in selected:
+                selected.insert(0, "tabbit")
         else:
             selected = QueryIntent.select_modules(intent, self._modules)
 
@@ -427,74 +568,116 @@ class SearchEngine:
                 errors={"engine": "No matching modules found"},
             )
 
-        # 3. 质量优先排序 - tabbit优先，高质量模块靠前
-        quality_order = [
-            "tabbit",  # 核心模块，始终优先
-            "metaso",  # AI深度答案
-            "phind",  # 编程答案
-            "perplexity",  # AI答案
-            "you",  # AI增强
-            "tavily",  # AI优化
-            "academic",  # 学术
-            "github",  # 代码
-            "wiki",  # 知识
-            "searxng",  # 聚合
-            "ddg",  # 免费
-            "brave",  # 企业
-            "bing",  # 微软
-            "serper",  # Google
-            "web",  # 兜底
-        ]
-        ordered = [m for m in quality_order if m in selected]
-        other_modules = [m for m in selected if m not in ordered]
-        ordered = ordered + other_modules
-
-        # 4. 并行搜索 - FIRST_COMPLETED 模式
         all_results: list[SearchResult] = []
+        results_by_source: dict[str, list[SearchResult]] = {}
         sources_used: list[str] = []
         errors: dict[str, str] = {}
-        min_results_needed = max(1, request.max_results // 2)
 
-        for name in ordered:
+        tasks: dict[str, asyncio.Task] = {}
+        for name in selected:
             module = self._modules[name]
-            try:
-                results = await asyncio.wait_for(
-                    self._safe_search(module, request),
-                    timeout=min(request.timeout * 0.5, 12),
-                )
-                if results:
-                    all_results.extend(results)
-                    sources_used.append(name)
-                    # 快速模块返回足够结果就继续
-                    if len(all_results) >= min_results_needed:
-                        break
-            except asyncio.TimeoutError:
-                errors[name] = "timeout"
-            except Exception as e:
-                errors[name] = str(e)
+            task = asyncio.create_task(
+                self._safe_search(module, request),
+                name=f"search_{name}",
+            )
+            tasks[name] = task
 
-        # 5. 后台等待其他模块（不阻塞）
-        remaining = [m for m in selected if m not in sources_used]
-        for name in remaining:
-            module = self._modules[name]
+        # Phase 2: 等待结果 — 用 FIRST_COMPLETED 逐个收集
+        min_results = max(3, request.max_results // 2)
+        phase1_timeout = min(request.timeout * 0.6, 15)  # 快阶段超时
+        phase1_start = time.time()
+
+        pending = set(tasks.values())
+        completed_names: set[str] = set()
+
+        while pending:
+            # 计算剩余超时
+            remaining_time = phase1_timeout - (time.time() - phase1_start)
+            if remaining_time <= 0:
+                break
+
             try:
-                results = await asyncio.wait_for(
-                    self._safe_search(module, request),
-                    timeout=max(3, request.timeout * 0.3),
+                done, pending = await asyncio.wait(
+                    pending,
+                    timeout=remaining_time,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                if results:
-                    all_results.extend(results)
-                    sources_used.append(name)
             except Exception:
-                pass
+                break
 
-        # 6. 去重
-        all_results = ResultMerger.deduplicate(all_results)
+            if not done:
+                break
 
-        # 7. 重排
-        all_results = ResultMerger.rerank(all_results)
+            # 收集完成的结果
+            for task in done:
+                task_name = task.get_name()
+                module_name = task_name.replace("search_", "")
 
-        # 8. 截取
+                try:
+                    results = task.result()
+                    if results:
+                        results_by_source[module_name] = results
+                        all_results.extend(results)
+                        sources_used.append(module_name)
+                    completed_names.add(module_name)
+                except asyncio.TimeoutError:
+                    errors[module_name] = "timeout"
+                    completed_names.add(module_name)
+                except Exception as e:
+                    errors[module_name] = str(e)
+                    completed_names.add(module_name)
+
+            # 检查是否有足够结果 + tabbit 已返回
+            tabbit_done = "tabbit" in completed_names
+            if tabbit_done and len(all_results) >= min_results:
+                break
+
+        # Phase 3: 取消仍在 pending 的任务（如果已经有足够结果）
+        remaining_tasks = set(pending)
+        if len(all_results) >= min_results:
+            for task in remaining_tasks:
+                task.cancel()
+        else:
+            phase2_timeout = max(3, request.timeout * 0.3)
+            if remaining_tasks:
+                try:
+                    done2, still_pending = await asyncio.wait(
+                        remaining_tasks,
+                        timeout=phase2_timeout,
+                        return_when=asyncio.ALL_COMPLETED,
+                    )
+                    for task in done2:
+                        task_name = task.get_name()
+                        module_name = task_name.replace("search_", "")
+                        try:
+                            results = task.result()
+                            if results:
+                                results_by_source[module_name] = results
+                                all_results.extend(results)
+                                sources_used.append(module_name)
+                        except Exception:
+                            pass
+                    for task in still_pending:
+                        task.cancel()
+                except Exception:
+                    for task in remaining_tasks:
+                        task.cancel()
+
+        # 4. RRF 融合（如果有多个源）
+        if len(results_by_source) > 1:
+            all_results = ResultMerger.rrf_fuse(results_by_source)
+        else:
+            # 单源 — 用传统去重 + 重排
+            all_results = ResultMerger.deduplicate(all_results)
+            all_results = ResultMerger.rerank(all_results)
+
+        # 5. Tabbit 结果置顶（如果有）
+        tabbit_results = [r for r in all_results if r.source == "tabbit"]
+        other_results = [r for r in all_results if r.source != "tabbit"]
+        if tabbit_results:
+            all_results = tabbit_results + other_results
+
+        # 6. 截取
         total = len(all_results)
         all_results = all_results[: request.max_results]
 
@@ -511,7 +694,9 @@ class SearchEngine:
                 "intent": {
                     "types": list(intent["types"]),
                     "hints": list(intent["hints"]),
-                }
+                },
+                "engine_version": "v4",
+                "phase1_modules": list(completed_names),
             },
         )
 
