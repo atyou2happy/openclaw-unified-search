@@ -35,6 +35,7 @@ class SearchResponse(BaseModel):
     sources_used: list[str] = Field(default_factory=list, description="实际使用的数据源")
     cached: bool = False
     errors: dict[str, str] = Field(default_factory=dict, description="模块错误信息")
+    metadata: dict = Field(default_factory=dict, description="引擎元数据（意图识别等）")
 
 
 class ModuleStatus(BaseModel):
