@@ -47,6 +47,7 @@ class SearchCache:
 
             self._hits += 1
             response.cached = True
+            response.elapsed = 0.0
             return response.model_copy()
 
     def put(self, request: SearchRequest, response: SearchResponse) -> None:

@@ -212,6 +212,7 @@ class QueryIntent:
         if not intent["types"]:
             intent["types"].add("general")
 
+        intent["_raw_query"] = q
         return intent
 
     @classmethod
@@ -263,6 +264,13 @@ class QueryIntent:
             # 新闻/实时查询加成
             if "fresh" in hints and name in ("searxng", "bing", "brave", "serper"):
                 score += 2.0
+
+            # 短查询优化：中文短查询优先 web/ddg 而非 wiki（避免不相关结果）
+            query_words = len(intent.get('_raw_query', '').split())
+            if query_words <= 3 and name in ('web', 'ddg') and 'chinese' in hints:
+                score += 2.0
+            if query_words <= 3 and name == 'wiki' and 'chinese' in hints:
+                score -= 1.0
 
             # 质量加成
             score += profile["quality"] * 1.0

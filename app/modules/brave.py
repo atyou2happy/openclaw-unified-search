@@ -12,6 +12,7 @@ class BraveModule(BaseSearchModule):
     description = "Brave Search API（免费 2000次/月）"
 
     async def health_check(self) -> bool:
+        # key 存在不代表有效，标记为可用由实际搜索验证
         return bool(os.environ.get("BRAVE_API_KEY"))
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
