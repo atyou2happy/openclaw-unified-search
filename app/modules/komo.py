@@ -13,6 +13,10 @@ class KomoModule(BaseSearchModule):
     description = "Komo AI 搜索（免费快速）"
 
     async def health_check(self) -> bool:
+        # API 已变更，暂时不可用
+        return False
+
+    async def _disabled_health_check(self) -> bool:
         # Komo 总是可用的（有 rate limit）
         return True
 

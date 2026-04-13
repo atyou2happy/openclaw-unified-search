@@ -43,11 +43,11 @@ class QueryIntent:
             "speed": "slow",
             "quality": 0.95,
         },
-        "searxng": {
-            "types": {"general", "research", "code", "academic", "news", "knowledge"},
+        "tabbit": {
+            "types": {"general", "research", "code", "academic", "knowledge"},
             "langs": {"zh", "en"},
-            "speed": "medium",
-            "quality": 0.95,  # 提升 — 核心模块
+            "speed": "slow",
+            "quality": 0.95,  # AI 搜索质量最高
         },
         "web": {
             "types": {"general"},
