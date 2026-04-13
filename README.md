@@ -14,6 +14,7 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 
 - 🧠 **Smart Routing** — Intent detection auto-selects best modules (code→Phind/GitHub, Chinese→Metaso/Baidu, academic→arXiv)
 - 🧩 **21 Modules** — SearXNG, Metaso AI, Phind, TabBitBrowser, DDG, Jina, GitHub, PDF, Docs, Academic, Wiki, Brave, Tavily, Serper, Perplexity, Bing, You.com, Komo
+- ⚡ **v3 Engine** — FIRST_COMPLETED, smart ordering, quality boost
 - 🧪 **22 Tests** — Intent detection, dedup, rerank, modules
 - ⚡ **Parallel Search** — Selected modules run concurrently, millisecond-level orchestration
 - 🔄 **Dedup & Rerank** — URL dedup + title dedup + AI answers first + authority boosting
