@@ -13,7 +13,7 @@
 ## ✨ 核心特性
 
 - 🧠 **智能调度** — 意图识别自动选择最佳模块（编程→Phind/GitHub，中文→秘塔/百度，学术→arXiv）
-- 🧩 **15 个模块** — SearXNG、秘塔AI、Phind、TabBitBrowser、DDG、Jina、GitHub、PDF、文档、学术、百科、Brave、Tavily、Serper
+- 🧩 **21 个模块** — SearXNG、秘塔AI、Phind、TabBitBrowser、DDG、Jina、GitHub、PDF、文档、学术、百科、Brave、Tavily、Serper、Perplexity、Bing、You.com、Komo
 - ⚡ **并行搜索** — 选中模块并行执行，毫秒级调度
 - 🔄 **去重重排** — URL去重 + 标题去重 + AI答案优先 + 权威来源加权
 - 💾 **LRU 缓存** — 可配置 TTL，避免重复搜索
@@ -53,6 +53,11 @@
 | `brave` | Brave Search | 企业级 Web 搜索 | BRAVE_API_KEY |
 | `tavily` | Tavily | AI Agent 专用搜索 | TAVILY_API_KEY |
 | `serper` | Serper.dev | Google 搜索结果 | SERPER_API_KEY |
+| `perplexity` | Perplexity AI | AI 答案引擎 | PERPLEXITY_API_KEY |
+| `ddg` | DuckDuckGo | 免费无限搜索 | 无需 |
+| `bing` | Bing Search | 微软搜索 | BING_API_KEY |
+| `you` | You.com | AI 增强搜索 | YOU_API_KEY |
+| `komo` | Komo | 快速 AI 搜索 | 无需 |
 
 ## 🚀 快速开始
 

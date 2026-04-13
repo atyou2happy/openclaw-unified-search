@@ -26,9 +26,25 @@ def list_names() -> list[str]:
 def auto_register():
     """自动导入并注册所有模块"""
     from app.modules import (
-        tabbit, web, github, pdf, docs, academic,
-        jina, wiki, brave, tavily, serper, searxng,
-        metaso, phind,  # noqa: F401
+        tabbit,
+        web,
+        github,
+        pdf,
+        docs,
+        academic,
+        jina,
+        wiki,
+        brave,
+        tavily,
+        serper,
+        searxng,
+        metaso,
+        phind,
+        ddg,
+        bing,
+        you,
+        komo,
+        perplexity,  # noqa: F401
     )
 
     modules = []
@@ -100,6 +116,31 @@ def auto_register():
 
     # Serper.dev (需 SERPER_API_KEY)
     m = serper.SerperModule()
+    register(m)
+    modules.append(m)
+
+    # Perplexity AI (需 PERPLEXITY_API_KEY)
+    m = perplexity.PerplexityModule()
+    register(m)
+    modules.append(m)
+
+    # DuckDuckGo (免费无限)
+    m = ddg.DuckDuckGoModule()
+    register(m)
+    modules.append(m)
+
+    # Bing Search (需 BING_API_KEY)
+    m = bing.BingModule()
+    register(m)
+    modules.append(m)
+
+    # You.com (需 YOU_API_KEY)
+    m = you.YouModule()
+    register(m)
+    modules.append(m)
+
+    # Komo (免费快速)
+    m = komo.KomoModule()
     register(m)
     modules.append(m)
 

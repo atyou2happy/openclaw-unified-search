@@ -13,7 +13,7 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 ## ✨ Key Features
 
 - 🧠 **Smart Routing** — Intent detection auto-selects best modules (code→Phind/GitHub, Chinese→Metaso/Baidu, academic→arXiv)
-- 🧩 **15 Modules** — SearXNG, Metaso AI, Phind, TabBitBrowser, DDG, Jina, GitHub, PDF, Docs, Academic, Wiki, Brave, Tavily, Serper
+- 🧩 **21 Modules** — SearXNG, Metaso AI, Phind, TabBitBrowser, DDG, Jina, GitHub, PDF, Docs, Academic, Wiki, Brave, Tavily, Serper, Perplexity, Bing, You.com, Komo
 - ⚡ **Parallel Search** — Selected modules run concurrently, millisecond-level orchestration
 - 🔄 **Dedup & Rerank** — URL dedup + title dedup + AI answers first + authority boosting
 - 💾 **LRU Cache** — Configurable TTL, avoids redundant searches
@@ -53,6 +53,11 @@ Results (with source URLs)
 | `brave` | Brave Search | Enterprise web search | BRAVE_API_KEY |
 | `tavily` | Tavily | AI agent-optimized search | TAVILY_API_KEY |
 | `serper` | Serper.dev | Google search results | SERPER_API_KEY |
+| `perplexity` | Perplexity AI | AI answer engine | PERPLEXITY_API_KEY |
+| `ddg` | DuckDuckGo | Free unlimited search | None |
+| `bing` | Bing Search | Microsoft search | BING_API_KEY |
+| `you` | You.com | AI-enhanced search | YOU_API_KEY |
+| `komo` | Komo | Fast AI search | None |
 
 ## 🚀 Quick Start
 
