@@ -43,6 +43,7 @@ class QueryIntent:
             "speed": "slow",
             "quality": 0.95,
         },
+        "searxng": {
             "types": {"general", "research", "code", "academic", "news", "knowledge"},
             "langs": {"zh", "en"},
             "speed": "medium",

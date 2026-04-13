@@ -1,5 +1,6 @@
 """Base class for search modules."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from app.models import SearchRequest, SearchResult
 
@@ -22,11 +23,13 @@ class BaseSearchModule(ABC):
         return True
 
     async def is_available(self) -> bool:
-        """快速可用性检查（带缓存）"""
+        """快速可用性检查（带缓存 + 超时保护）"""
         if self._available is None:
             try:
-                self._available = await self.health_check()
-            except Exception:
+                self._available = await asyncio.wait_for(
+                    self.health_check(), timeout=5.0
+                )
+            except (asyncio.TimeoutError, Exception):
                 self._available = False
         return self._available
 

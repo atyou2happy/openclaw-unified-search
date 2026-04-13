@@ -27,12 +27,8 @@ class TabBitModule(BaseSearchModule):
     async def health_check(self) -> bool:
         import httpx
 
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": 5}
-        if proxy:
-            kwargs["proxy"] = proxy
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
+            async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.get(
                     f"http://localhost:{self._cdp_port}/json",
                 )
