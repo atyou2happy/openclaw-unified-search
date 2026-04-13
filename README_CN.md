@@ -1,124 +1,183 @@
-# Unified Search API 统一搜索服务
+<p align="center">
+  <h1 align="center">🔍 OpenClaw Unified Search</h1>
+  <p align="center">
+    <b>智能调度统一搜索服务 — 15 模块 + 意图识别 + 去重重排</b><br/>
+    <a href="README.md">English</a> | 中文
+  </p>
+</p>
 
-一个模块化的统一搜索服务，为 [OpenClaw](https://github.com/openclaw/openclaw) 提供全面、准确、最新、高质量的信息获取。所有搜索需求 — 深度调研、日常查询 — 都通过一个 API 入口完成。
+---
 
-## 特性
+一个模块化的统一搜索服务，专为 [OpenClaw](https://github.com/openclaw) 设计。所有搜索需求通过一个 API 完成，返回全面、准确、最新的高质量信息。
 
-- 🧩 **模块化** — 每个数据源独立模块，可插拔
-- ⚡ **并行调度** — 所有模块并发执行，结果合并排序
-- 🎯 **统一接口** — 一个端点（`POST /search`）搞定一切
-- 💾 **智能缓存** — LRU 缓存，可配置 TTL
-- 🔌 **易扩展** — 实现 `BaseSearchModule` 即可添加新模块
+## ✨ 核心特性
 
-## 搜索模块
+- 🧠 **智能调度** — 意图识别自动选择最佳模块（编程→Phind/GitHub，中文→秘塔/百度，学术→arXiv）
+- 🧩 **15 个模块** — SearXNG、秘塔AI、Phind、TabBitBrowser、DDG、Jina、GitHub、PDF、文档、学术、百科、Brave、Tavily、Serper
+- ⚡ **并行搜索** — 选中模块并行执行，毫秒级调度
+- 🔄 **去重重排** — URL去重 + 标题去重 + AI答案优先 + 权威来源加权
+- 💾 **LRU 缓存** — 可配置 TTL，避免重复搜索
+- 🔌 **零门槛扩展** — 实现 `BaseSearchModule` 即可添加新模块
 
-| 模块 | 数据源 | 说明 |
-|------|--------|------|
-| `tabbit` | TabBitBrowser | 本地 AI 搜索（质量最高） |
-| `web` | DuckDuckGo | 免费无限网页搜索 |
-| `github` | GitHub API | 仓库/代码/README 搜索 |
-| `pdf` | pypdf | 在线 PDF 下载+文本提取 |
-| `docs` | trafilatura | 文档站点抓取+正文提取 |
-| `academic` | Semantic Scholar + arXiv | 学术论文搜索 |
+## 🏗️ 架构
 
-## 快速开始
+```
+用户查询
+  ↓
+意图识别（编程/学术/知识/综合/内容）
+  ↓
+智能选模块（3-5 个最相关）
+  ↓
+并行搜索
+  ↓
+去重 + 质量重排
+  ↓
+返回结果（附带来源链接）
+```
+
+## 📦 模块列表
+
+| 模块 | 来源 | 说明 | 需配置 |
+|------|------|------|--------|
+| `searxng` | SearXNG | 聚合搜索（百度/搜狗/360/Google/Bing/DDG/Brave 等 11 引擎） | Docker |
+| `metaso` | 秘塔AI搜索 | 中文 AI 搜索最强（简洁/深入/研究模式） | METASO_TOKEN |
+| `phind` | Phind | 程序员 AI 搜索引擎 | 代理 |
+| `tabbit` | TabBitBrowser | AI 驱动的本地搜索（CDP） | CDP 9222 |
+| `web` | TabBit + DDG | TabBit 优先 + DDG 备用 | 代理 |
+| `jina` | Jina Reader | 网页内容提取（Markdown） | 代理 |
+| `github` | GitHub + Zread.ai | 仓库搜索 + 深度分析 | 无 |
+| `pdf` | pypdf | 在线 PDF 获取 + 解析 | 无 |
+| `docs` | 文档站点 | 技术文档抓取 | 无 |
+| `academic` | arXiv + Semantic Scholar | 学术论文搜索 | 无 |
+| `wiki` | 百度百科 + 维基百科 | 双引擎百科查询 | 代理(维基) |
+| `brave` | Brave Search | 企业级 Web 搜索 | BRAVE_API_KEY |
+| `tavily` | Tavily | AI Agent 专用搜索 | TAVILY_API_KEY |
+| `serper` | Serper.dev | Google 搜索结果 | SERPER_API_KEY |
+
+## 🚀 快速开始
+
+### 安装
 
 ```bash
-# 安装
-git clone https://github.com/atyou2happy/unified-search.git
-cd unified-search
-pip install -e .
+git clone https://github.com/atyou2happy/openclaw-unified-search.git
+cd openclaw-unified-search
+pip install -r requirements.txt
+```
 
-# 运行
+### 启动
+
+```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8900
 ```
 
-打开 http://localhost:8900/docs 查看交互式 API 文档。
-
-## API 使用
-
-### 统一搜索（所有模块）
+### 搜索
 
 ```bash
-curl -X POST http://localhost:8900/search \
+# 智能搜索（自动选模块）
+curl -s http://localhost:8900/search -X POST \
   -H "Content-Type: application/json" \
-  -d '{"query": "FastCode GitHub", "max_results": 10}'
+  -d '{"query": "FastAPI 怎么写接口", "max_results": 10}' | jq .
+
+# 指定模块
+curl -s http://localhost:8900/search/github -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "openclaw", "max_results": 5}' | jq .
+
+# 深度搜索
+curl -s http://localhost:8900/search -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "transformer attention", "depth": "deep", "max_results": 20}' | jq .
 ```
 
-### 指定模块搜索
+## 🧠 智能调度示例
+
+| 查询 | 识别意图 | 选择模块 |
+|------|---------|---------|
+| `Python FastAPI 怎么写接口` | code | phind → github → tabbit → searxng |
+| `transformer attention 论文` | academic | metaso → academic → searxng |
+| `什么是 RAG 技术` | knowledge | wiki → searxng → metaso |
+| `atyou2happy/openclaw-unified-search` | code (repo) | github → phind → searxng |
+| `https://docs.python.org/...` | code + content | jina → github → phind |
+
+## 🐳 SearXNG 部署
 
 ```bash
-curl -X POST http://localhost:8900/search/github \
-  -H "Content-Type: application/json" \
-  -d '{"query": "transformer attention", "max_results": 5}'
+# 拉取镜像
+docker pull searxng/searxng:latest
+
+# 启动（host 模式，共享代理）
+docker run -d --name searxng --restart unless-stopped \
+  --network host \
+  -v /var/lib/docker/searxng:/etc/searxng:rw \
+  searxng/searxng:latest
 ```
 
-### 请求参数
+## 🔧 环境变量
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `query` | string | 必填 | 搜索关键词/问题 |
-| `sources` | string[] | []（全部） | 指定数据源模块 |
-| `max_results` | int | 10 | 每个模块最大结果数 |
-| `timeout` | int | 30 | 超时秒数 |
-| `depth` | string | "normal" | `quick`/`normal`/`deep` |
-| `language` | string | "auto" | `auto`/`zh`/`en` |
+```bash
+# 代理（WSL 环境）
+export HTTP_PROXY="http://127.0.0.1:21882"
+export HTTPS_PROXY="http://127.0.0.1:21882"
 
-### 其他端点
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 服务健康检查 |
-| GET | `/modules` | 列出所有模块及状态 |
-| GET | `/modules/{name}/status` | 单个模块状态 |
-| GET | `/cache/stats` | 缓存统计 |
-| DELETE | `/cache` | 清除缓存 |
-
-## 添加新模块
-
-1. 创建 `app/modules/your_module.py`：
-
-```python
-from app.modules.base import BaseSearchModule
-from app.models import SearchRequest, SearchResult
-
-class YourModule(BaseSearchModule):
-    name = "your_module"
-    description = "模块描述"
-
-    async def search(self, request: SearchRequest) -> list[SearchResult]:
-        # 你的搜索逻辑
-        return [SearchResult(title="...", url="...", snippet="...", source=self.name)]
+# 可选 API Keys
+export METASO_TOKEN="your-tid-token"
+export BRAVE_API_KEY="xxx"
+export TAVILY_API_KEY="xxx"
+export SERPER_API_KEY="xxx"
+export GITHUB_TOKEN="xxx"  # 提高速率限制
 ```
 
-2. 在 `app/modules/__init__.py` 注册：
+## 📁 项目结构
 
-```python
-from app.modules.your_module import YourModule
-register(YourModule())
+```
+openclaw-unified-search/
+├── app/
+│   ├── main.py          # FastAPI 入口
+│   ├── engine.py        # 智能调度引擎 v2
+│   ├── config.py        # 配置（代理等）
+│   ├── models.py        # 数据模型
+│   ├── cache.py         # LRU 缓存
+│   ├── router.py        # API 路由
+│   └── modules/
+│       ├── __init__.py  # 模块注册
+│       ├── base.py      # 基类
+│       ├── searxng.py   # SearXNG 聚合
+│       ├── metaso.py    # 秘塔AI搜索
+│       ├── phind.py     # Phind 程序员搜索
+│       ├── tabbit.py    # TabBitBrowser
+│       ├── web.py       # Web 搜索
+│       ├── jina.py      # Jina Reader
+│       ├── github.py    # GitHub + Zread
+│       ├── wiki.py      # 百度百科 + 维基百科
+│       ├── pdf.py       # PDF 解析
+│       ├── docs.py      # 文档站点
+│       ├── academic.py  # 学术论文
+│       ├── brave.py     # Brave Search
+│       ├── tavily.py    # Tavily
+│       └── serper.py    # Serper.dev
+├── tests/
+│   └── test_search.py   # 10 个测试
+├── README.md            # 中文文档
+├── README_EN.md         # English Docs
+└── requirements.txt
 ```
 
-## 配置
+## 📊 技术栈
 
-环境变量：
+- **Python 3.12** + FastAPI + httpx + pydantic v2
+- **SearXNG** (Docker) — 247+ 搜索引擎聚合
+- **秘塔AI** — 中文 AI 搜索
+- **Jina Reader** — 网页内容提取
+- **pgvector** / **Whoosh** — 混合搜索（计划中）
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `GITHUB_TOKEN` | None | GitHub API token（提高速率限制） |
-
-详细配置见 `app/config.py`。
-
-## 技术栈
-
-- **FastAPI** + **uvicorn** — 异步 Web 框架
-- **httpx** — 异步 HTTP 客户端
-- **pydantic v2** — 数据验证
-- **duckduckgo-search** — 免费网页搜索
-- **pypdf** — PDF 文本提取
-- **trafilatura** — 网页正文提取
-- **arxiv** — arXiv 论文搜索
-- **Semantic Scholar API** — 学术论文搜索
-
-## 许可证
+## 📄 License
 
 MIT
+
+---
+
+<p align="center">
+  <a href="https://github.com/atyou2happy/openclaw-unified-search">GitHub</a> ·
+  <a href="https://openclaw.ai">OpenClaw</a> ·
+  Made with ❤️ for the AI Agent community
+</p>
