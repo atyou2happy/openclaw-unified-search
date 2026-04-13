@@ -13,8 +13,8 @@ class SearXNGModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{self.BASE_URL}/healthz")
+            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+                resp = await client.get(f"{self.BASE_URL}/search", params={"q": "health", "format": "json"})
                 return resp.status_code == 200
         except Exception:
             return False
@@ -28,7 +28,7 @@ class SearXNGModule(BaseSearchModule):
                 "pageno": 1,
             }
 
-            async with httpx.AsyncClient(timeout=request.timeout) as client:
+            async with httpx.AsyncClient(timeout=request.timeout, trust_env=False) as client:
                 resp = await client.get(
                     f"{self.BASE_URL}/search",
                     params=params,

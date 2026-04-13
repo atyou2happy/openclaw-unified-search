@@ -16,7 +16,7 @@ class MetasoModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
+            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
                 resp = await client.get(f"{self.BASE_URL}")
                 return resp.status_code in (200, 401, 403)
         except Exception:
@@ -28,7 +28,7 @@ class MetasoModule(BaseSearchModule):
             return []
 
         try:
-            async with httpx.AsyncClient(timeout=request.timeout) as client:
+            async with httpx.AsyncClient(timeout=request.timeout, trust_env=False) as client:
                 # 使用 OpenAI 兼容接口
                 resp = await client.post(
                     f"{self.BASE_URL}/v1/chat/completions",
