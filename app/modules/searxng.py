@@ -10,10 +10,11 @@ class SearXNGModule(BaseSearchModule):
     name = "searxng"
     description = "SearXNG 聚合搜索（Google/Bing/DDG/Brave 等 247+ 引擎）"
     BASE_URL = "http://127.0.0.1:8080"
+    health_check_timeout = 15.0  # Docker 网络可能慢
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
                 resp = await client.get(f"{self.BASE_URL}/search", params={"q": "health", "format": "json"})
                 return resp.status_code == 200
         except Exception:
@@ -35,26 +36,18 @@ class SearXNGModule(BaseSearchModule):
                 )
                 if resp.status_code != 200:
                     return []
-
                 data = resp.json()
-                results = []
-                for item in data.get("results", []):
-                    # SearXNG 返回的引擎列表
-                    engines = item.get("engines", [])
-                    engine_str = ",".join(engines[:3]) if engines else "searxng"
 
-                    results.append(SearchResult(
-                        title=item.get("title", ""),
-                        url=item.get("url", ""),
-                        snippet=item.get("content", "")[:500],
-                        content=item.get("content", "")[:8000] if request.depth != "quick" else "",
-                        source=f"searxng",
-                        relevance=min(item.get("score", 0) / 5, 1.0) if item.get("score") else 0.7,
-                        metadata={
-                            "engines": engines,
-                            "engine_primary": engines[0] if engines else "",
-                        },
-                    ))
-                return results[:request.max_results]
+            results = []
+            for item in data.get("results", [])[:request.limit]:
+                results.append(SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    snippet=item.get("content", ""),
+                    source=self.name,
+                    score=item.get("score", 0),
+                    engine=item.get("engine", ""),
+                ))
+            return results
         except Exception:
             return []

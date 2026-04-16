@@ -28,7 +28,7 @@ class TabBitModule(BaseSearchModule):
         import httpx
 
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
+            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
                 resp = await client.get(
                     f"http://localhost:{self._cdp_port}/json",
                 )

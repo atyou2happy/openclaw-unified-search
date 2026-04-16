@@ -1,8 +1,11 @@
 """Base class for search modules."""
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from app.models import SearchRequest, SearchResult
+
+logger = logging.getLogger(__name__)
 
 
 class BaseSearchModule(ABC):
@@ -10,6 +13,7 @@ class BaseSearchModule(ABC):
 
     name: str = ""
     description: str = ""
+    health_check_timeout: float = 15.0  # 默认15秒（代理网络需更长时间）
 
     def __init__(self):
         self._available: bool | None = None
@@ -27,9 +31,13 @@ class BaseSearchModule(ABC):
         if self._available is None:
             try:
                 self._available = await asyncio.wait_for(
-                    self.health_check(), timeout=5.0
+                    self.health_check(), timeout=self.health_check_timeout
                 )
-            except (asyncio.TimeoutError, Exception):
+            except asyncio.TimeoutError:
+                logger.warning(f"Module {self.name} health check timed out ({self.health_check_timeout}s)")
+                self._available = False
+            except Exception as e:
+                logger.warning(f"Module {self.name} health check failed: {e}")
                 self._available = False
         return self._available
 

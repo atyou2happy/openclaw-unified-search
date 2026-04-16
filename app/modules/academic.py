@@ -35,7 +35,7 @@ class AcademicModule(BaseSearchModule):
         import httpx
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
                 resp = await client.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search",
                     params={

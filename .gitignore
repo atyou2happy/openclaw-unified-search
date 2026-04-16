@@ -34,3 +34,5 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+# CocoIndex Code (ccc)
+/.cocoindex_code/

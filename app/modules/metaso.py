@@ -18,7 +18,7 @@ class MetasoModule(BaseSearchModule):
         try:
             async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
                 resp = await client.get(f"{self.BASE_URL}")
-                return resp.status_code in (200, 401, 403)
+                return resp.status_code in (200, 401, 403, 500)
         except Exception:
             return False
 
