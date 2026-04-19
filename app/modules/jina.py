@@ -15,7 +15,7 @@ class JinaModule(BaseSearchModule):
     async def health_check(self) -> bool:
         try:
             proxy = Config.get_proxy()
-            kwargs = {"timeout": 15}
+            kwargs = {"timeout": 30}
             if proxy:
                 kwargs["proxy"] = proxy
             async with httpx.AsyncClient(**kwargs) as client:
