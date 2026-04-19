@@ -98,6 +98,52 @@ async def cache_clear():
     return {"cleared": count}
 
 
+
+
+@router.get("/health/detailed")
+async def health_detailed():
+    """详细健康检查 — 实时检查每个模块（包括 CDP）"""
+    from app.modules import get_all
+    from app.modules.cdp_pool import is_cdp_available
+    
+    modules = get_all()
+    results = {}
+    available = 0
+    cdp_reachable = await is_cdp_available(force=True)
+    
+    for name, m in modules.items():
+        try:
+            healthy = await __import__("asyncio").wait_for(
+                m.health_check(), timeout=10
+            )
+        except Exception:
+            healthy = False
+        
+        # For CDP modules, also report actual CDP reachability
+        is_cdp = "CDP" in m.description
+        status = "ok" if healthy else "down"
+        
+        if is_cdp and healthy and not cdp_reachable:
+            status = "degraded"  # lazy check says ok but CDP unreachable
+            healthy = False
+            
+        if healthy:
+            available += 1
+            
+        results[name] = {
+            "description": m.description,
+            "status": status,
+            "available": healthy,
+        }
+    
+    return {
+        "status": "ok",
+        "modules_total": len(modules),
+        "modules_available": available,
+        "cdp_reachable": cdp_reachable,
+        "modules": results,
+    }
+
 @router.post("/reload")
 async def reload_modules():
     """热加载模块 — 不重启服务，重新注册所有模块
