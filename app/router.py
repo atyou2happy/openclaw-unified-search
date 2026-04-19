@@ -32,6 +32,16 @@ async def search(request: SearchRequest):
     """统一搜索 — 智能调度 + 并行调用"""
     return await engine.search(request)
 
+@router.post("/search/cdp", response_model=SearchResponse)
+async def search_cdp_fallback(request: SearchRequest):
+    """CDP AI Agent 降级搜索 — 按质量排序自动降级
+    
+    按搜索质量依次尝试：tabbit → deepseek → gemini → grok → kimi → glm → qwen
+    第一个成功即返回，失败自动降级到下一个
+    """
+    return await engine.cdp_search_fallback(request)
+
+
 
 @router.post("/search/{module_name}", response_model=SearchResponse)
 async def search_module(module_name: str, request: SearchRequest):

@@ -139,7 +139,54 @@ class QueryIntent:
             "speed": "fast",
             "quality": 0.8,
         },
+        "deepseek": {
+            "types": {"general", "research", "code", "knowledge"},
+            "langs": {"zh", "en"},
+            "speed": "medium",
+            "quality": 0.92,
+        },
+        "gemini": {
+            "types": {"general", "research", "knowledge"},
+            "langs": {"en", "zh"},
+            "speed": "medium",
+            "quality": 0.90,
+        },
+        "grok": {
+            "types": {"general", "research", "news"},
+            "langs": {"en"},
+            "speed": "medium",
+            "quality": 0.88,
+        },
+        "kimi": {
+            "types": {"general", "research", "knowledge"},
+            "langs": {"zh", "en"},
+            "speed": "slow",
+            "quality": 0.86,
+        },
+        "qwen": {
+            "types": {"general", "research", "knowledge"},
+            "langs": {"zh", "en"},
+            "speed": "slow",
+            "quality": 0.84,
+        },
+        "glm": {
+            "types": {"general", "research", "knowledge"},
+            "langs": {"zh"},
+            "speed": "medium",
+            "quality": 0.85,
+        },
     }
+
+    # CDP AI Agent 降级链 — 按搜索质量排序
+    CDP_FALLBACK_CHAIN = [
+        "tabbit",    # quality=0.95, 最稳定
+        "deepseek",  # quality=0.92, DeepThink 推理强
+        "gemini",    # quality=0.90, Google 搜索加持
+        "grok",      # quality=0.88, xAI 实时信息
+        "kimi",      # quality=0.86, 长文档强
+        "glm",       # quality=0.85, 中文优化
+        "qwen",      # quality=0.84, 搜索模式但最慢
+    ]
 
     @classmethod
     def detect(cls, query: str, language: str = "auto") -> dict:
@@ -539,6 +586,68 @@ class SearchEngine:
         from app.modules import get_all
 
         self._modules = get_all()
+
+    async def cdp_search_fallback(self, request: SearchRequest) -> SearchResponse:
+        """CDP AI Agent 降级搜索 — 按质量排序，失败自动降级
+
+        策略：从 CDP_FALLBACK_CHAIN 中依次尝试，第一个成功即返回。
+        如果用户指定了 sources，则从 chain 中筛选匹配的模块。
+        """
+        start = time.time()
+        timeout = request.timeout or 120
+
+        # Determine which CDP modules to try
+        if request.sources:
+            # User specified sources: filter from fallback chain, preserving order
+            cdp_modules = [m for m in QueryIntent.CDP_FALLBACK_CHAIN if m in request.sources]
+        else:
+            cdp_modules = list(QueryIntent.CDP_FALLBACK_CHAIN)
+
+        # Filter to only available modules
+        cdp_modules = [m for m in cdp_modules if m in self._modules]
+
+        if not cdp_modules:
+            return SearchResponse(
+                query=request.query, results=[], total=0,
+                elapsed=time.time() - start, sources_used=[],
+                errors={"engine": "No CDP modules available"}
+            )
+
+        errors = []
+        for module_name in cdp_modules:
+            module = self._modules[module_name]
+            remaining = timeout - (time.time() - start)
+            if remaining < 10:
+                errors.append(f"{module_name}: timeout budget exhausted")
+                continue
+
+            try:
+                print(f"CDP fallback: trying {module_name} (remaining={remaining:.0f}s)")
+                result = await asyncio.wait_for(
+                    module.search(request),
+                    timeout=min(remaining - 5, 90)
+                )
+                if result:
+                    elapsed = time.time() - start
+                    print(f"CDP fallback: {module_name} succeeded in {elapsed:.1f}s")
+                    return SearchResponse(
+                        query=request.query, results=result,
+                        total=len(result), elapsed=elapsed,
+                        sources_used=[module_name],
+                    )
+            except asyncio.TimeoutError:
+                errors.append(f"{module_name}: timeout")
+                print(f"CDP fallback: {module_name} timed out")
+            except Exception as e:
+                errors.append(f"{module_name}: {str(e)[:100]}")
+                print(f"CDP fallback: {module_name} failed: {e}")
+
+        elapsed = time.time() - start
+        return SearchResponse(
+            query=request.query, results=[], total=0,
+            elapsed=elapsed, sources_used=[],
+            errors={"engine": f"All CDP modules failed: {'; '.join(errors)}"}
+        )
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         """v4 搜索：意图识别 → tabbit 始终选中 → 真并行调度 → RRF 融合"""
