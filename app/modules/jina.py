@@ -13,16 +13,8 @@ class JinaModule(BaseSearchModule):
     READ_URL = "https://r.jina.ai/"
 
     async def health_check(self) -> bool:
-        try:
-            proxy = Config.get_proxy()
-            kwargs = {"timeout": 30}
-            if proxy:
-                kwargs["proxy"] = proxy
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.head(self.READ_URL)
-                return resp.status_code in (200, 301, 302, 403)
-        except Exception:
-            return False
+        # Jina 响应慢（21s+），跳过启动检查，按需失败
+        return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         """提取 URL 内容（query 应为 URL），或搜索关键词后提取"""
