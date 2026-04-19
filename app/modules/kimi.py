@@ -23,10 +23,9 @@ class KimiModule(BaseSearchModule):
         self._is_available = None
 
     async def health_check(self) -> bool:
-        if self._is_available is not None:
-            return self._is_available
-        self._is_available = await is_cdp_available()
-        return self._is_available
+        # Lazy check: always return True at startup, 
+        # actual CDP availability checked at search time
+        return True
 
     def reset_availability(self):
         self._is_available = None
