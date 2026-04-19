@@ -118,6 +118,10 @@ async def reload_modules():
     # 重新加载引擎
     engine.load_modules()
     
+    # Reset availability cache on all modules
+    for m in modules:
+        m.reset_availability()
+    
     # 检查可用性
     import asyncio
     available = 0
