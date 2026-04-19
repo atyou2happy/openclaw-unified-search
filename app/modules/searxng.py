@@ -14,9 +14,9 @@ class SearXNGModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
-                resp = await client.get(f"{self.BASE_URL}/search", params={"q": "health", "format": "json"})
-                return resp.status_code == 200
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+                resp = await client.get(f"{self.BASE_URL}/healthz")
+                return resp.status_code == 200 and "OK" in resp.text
         except Exception:
             return False
 

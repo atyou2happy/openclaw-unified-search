@@ -15,15 +15,12 @@ class JinaModule(BaseSearchModule):
     async def health_check(self) -> bool:
         try:
             proxy = Config.get_proxy()
-            kwargs = {"timeout": 10}
+            kwargs = {"timeout": 15}
             if proxy:
                 kwargs["proxy"] = proxy
             async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.get(
-                    f"{self.READ_URL}https://example.com",
-                    headers={"Accept": "text/plain"},
-                )
-                return resp.status_code == 200
+                resp = await client.head(self.READ_URL)
+                return resp.status_code in (200, 301, 302, 403)
         except Exception:
             return False
 
