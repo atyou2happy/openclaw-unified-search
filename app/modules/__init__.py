@@ -72,11 +72,11 @@ def auto_register():
     register(m); modules.append(m)
 
     # DeepSeek AI (TabBitBrowser CDP)
-    m = deepseek.DeepSeekModule()
+    m = deepseek.DeepseekModule()
     register(m); modules.append(m)
 
     # GLM AI (TabBitBrowser CDP)
-    m = glm.GLMModule()
+    m = glm.GlmModule()
     register(m); modules.append(m)
 
     # Kimi AI (TabBitBrowser CDP)

@@ -1,96 +1,116 @@
-"""Gemini search module — 通过 TabBitBrowser CDP 访问 Google Gemini 获取 AI 搜索结果."""
+"""Gemini AI 搜索（CDP） — 使用 cdp_pool 统一连接管理"""
 
 import asyncio
-import json
-import sys
-from app.config import Config
+import logging
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+from app.modules.cdp_pool import (
+    is_cdp_available, cdp_send_command, create_tab, close_tab
+)
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiModule(BaseSearchModule):
     name = "gemini"
-    description = "Google Gemini AI 搜索（TabBitBrowser CDP，高质量）"
+    description = "Gemini AI 搜索（CDP）"
+    URL = "https://gemini.google.com/"
+    TEXTAREA_SELECTOR = 'textarea, [contenteditable="true"], [class*="input"]'
+    MARKDOWN_SELECTOR = '[class*="markdown"], [class*="response"]'
+    THINKING_PREFIX = "Let me think"
 
     def __init__(self):
-        super().__init__()
-        self._cdp_port = Config.TABBIT_CDP_PORT
-        self._script_path = "/mnt/g/knowledge/claw-mem/tools/gemini_cdp_search.py"
+        self._is_available = None
 
     async def health_check(self) -> bool:
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                resp = await client.get(f"http://localhost:{self._cdp_port}/json")
-                return resp.status_code == 200
-        except Exception:
-            return False
+        if self._is_available is not None:
+            return self._is_available
+        self._is_available = await is_cdp_available()
+        return self._is_available
 
-    async def search(self, request: SearchRequest) -> list[SearchResult]:
-        timeout = min(request.timeout, 180)
-        max_chars = 12000 if request.depth == "deep" else 6000
+    def reset_availability(self):
+        self._is_available = None
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                self._script_path,
-                request.query,
-                "--port", str(self._cdp_port),
-                "--timeout", str(timeout),
-                "--max-chars", str(max_chars),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+    async def _wait_for_selector(self, ws_url, selector, timeout=15):
+        for i in range(timeout):
+            r = await cdp_send_command(ws_url, "Runtime.evaluate", {
+                "expression": 'document.querySelector("' + selector + '")?"ready":"waiting"'
+            }, timeout=10)
+            if r and r.get("result", {}).get("result", {}).get("value") == "ready":
+                return True
+            await asyncio.sleep(1)
+        return False
+
+    async def _type_text(self, ws_url, text):
+        for ch in text:
+            await cdp_send_command(ws_url, "Input.dispatchKeyEvent", {
+                "type": "char", "text": ch
+            }, timeout=5)
+            await asyncio.sleep(0.02)
+
+    async def _press_enter(self, ws_url):
+        for evt_type in ["keyDown", "keyUp"]:
+            await cdp_send_command(ws_url, "Input.dispatchKeyEvent", {
+                "type": evt_type, "key": "Enter",
+                "code": "Enter", "windowsVirtualKeyCode": 13
+            }, timeout=5)
+
+    async def _wait_for_response(self, ws_url, timeout=60, check_interval=3):
+        last_text = ""
+        stable_count = 0
+        md_sel = self.MARKDOWN_SELECTOR
+        think_prefix = self.THINKING_PREFIX
+
+        for i in range(timeout // check_interval):
+            await asyncio.sleep(check_interval)
+            expr = (
+                "(() => {"
+                "const mds = Array.from(document.querySelectorAll('" + md_sel + "'));"
+                "const actual = mds.filter(e => !e.textContent.startsWith('" + think_prefix + "'));"
+                "const text = actual.map(e => e.textContent.trim()).join('\\n\\n');"
+                "return text;"
+                "})()"
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout + 60
-            )
+            r = await cdp_send_command(ws_url, "Runtime.evaluate", {"expression": expr}, timeout=15)
+            if not r:
+                continue
+            text = r.get("result", {}).get("result", {}).get("value", "")
+            if text and text == last_text:
+                stable_count += 1
+                if stable_count >= 2:
+                    return text
+            else:
+                stable_count = 0
+                last_text = text
+        return last_text
 
-            if proc.returncode != 0:
-                self._available = False
-                return []
-
-            content = stdout.decode("utf-8", errors="replace").strip()
-            if not content:
-                return []
-
-            return self._parse_results(content, request)
-
-        except asyncio.TimeoutError:
-            return []
-        except Exception:
-            return []
-
-    def _parse_results(self, content: str, request: SearchRequest) -> list[SearchResult]:
-        results: list[SearchResult] = []
-
+    async def search(self, request):
+        tab_id = None
         try:
-            data = json.loads(content)
-            answer = data.get("answer", "")
-            if answer and len(answer.strip()) > 20:
-                results.append(
-                    SearchResult(
-                        title=f"Gemini AI: {request.query}",
-                        url="",
-                        snippet=answer[:500],
-                        content=answer,
-                        source=self.name,
-                        relevance=0.95,
-                        metadata={"type": "ai_answer"},
-                    )
-                )
-        except (json.JSONDecodeError, TypeError):
-            # Fallback: treat raw output as answer
-            if content and len(content.strip()) > 20:
-                results.append(
-                    SearchResult(
-                        title=f"Gemini AI: {request.query}",
-                        url="",
-                        snippet=content[:500],
-                        content=content,
-                        source=self.name,
-                        relevance=0.95,
-                        metadata={"type": "ai_answer"},
-                    )
-                )
-
-        return results[:request.max_results]
+            result = await create_tab(self.URL)
+            if not result:
+                return []
+            tab_id, tab_ws_url = result
+            await asyncio.sleep(8)
+            if not await self._wait_for_selector(tab_ws_url, self.TEXTAREA_SELECTOR):
+                return []
+            await cdp_send_command(tab_ws_url, "Runtime.evaluate", {
+                "expression": 'document.querySelector("' + self.TEXTAREA_SELECTOR + '").focus();"focused"'
+            }, timeout=5)
+            await self._type_text(tab_ws_url, request.query)
+            await self._press_enter(tab_ws_url)
+            logger.info("gemini: waiting for response")
+            response_text = await self._wait_for_response(tab_ws_url)
+            if not response_text:
+                return []
+            return [SearchResult(
+                title="gemini AI: " + request.query[:50],
+                url=self.URL, snippet=response_text[:500],
+                source=self.name, score=1.0,
+            )]
+        except Exception as e:
+            logger.error("gemini search error: " + str(e))
+            return []
+        finally:
+            if tab_id:
+                await close_tab(tab_id)
