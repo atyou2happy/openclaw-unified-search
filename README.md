@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🔍 OpenClaw Unified Search</h1>
   <p align="center">
-    <b>Smart Unified Search Service — 18 Modules + True Parallel Engine v4 + RRF Fusion</b><br/>
+    <b>Smart Unified Search Service — 24 Modules + 6 CDP AI Agents + Parallel Engine v4</b><br/>
     English | <a href="README_CN.md">中文</a>
   </p>
 </p>
@@ -12,57 +12,79 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 
 ## ✨ Key Features
 
-- ⚡ **True Parallel Engine v4** — `asyncio.wait(FIRST_COMPLETED)` replaces sequential loop, all modules run concurrently
-- 🥇 **TabBit Always First** — Core module hardcoded to highest priority, results always displayed first
-- 🔀 **RRF Fusion** — Reciprocal Rank Fusion (industry standard) for multi-source result merging
-- 🧠 **Smart Routing v4** — Intent detection + adaptive module count (3-8 based on query complexity) + news intent
-- 🧩 **18 Modules** — TabBitBrowser, SearXNG, Metaso AI, Phind, Perplexity, DDG, Jina, GitHub, PDF, Docs, Academic, Wiki, Brave, Tavily, Serper, Bing, You.com, Komo
-- 🧠 **Smart Dedup v4** — URL dedup + title similarity (SequenceMatcher > 0.85) + cross-source metadata merge
-- 🧪 **36 Tests** — Intent detection, RRF fusion, parallel execution, tabbit priority, structured parsing
+- ⚡ **True Parallel Engine v4** — `asyncio.wait(FIRST_COMPLETED)`, all modules run concurrently
+- 🤖 **6 CDP AI Agents** — DeepSeek, Kimi, Grok, Qwen, GLM, Gemini via TabBitBrowser CDP
+- 🔀 **RRF Fusion** — Reciprocal Rank Fusion for multi-source result merging
+- 🧠 **Smart Routing** — Intent detection + adaptive module count (3-8 based on query complexity)
+- 🧩 **24 Modules** — 6 CDP AI agents + 18 traditional search modules
+- 🧠 **Smart Dedup** — URL dedup + title similarity (SequenceMatcher > 0.85) + metadata merge
 - 💾 **LRU Cache** — Configurable TTL, avoids redundant searches
 - 🔌 **Zero-Barrier Extension** — Add new modules by implementing `BaseSearchModule`
 
-## 🏗️ Architecture
+## 🤖 CDP AI Agent Modules
+
+These modules interact with AI chat services via Chrome DevTools Protocol (CDP) through TabBitBrowser:
+
+| Module | Service | Input Method | Send Method | Response Detection |
+|--------|---------|-------------|-------------|-------------------|
+| `tabbit` | TabBitBrowser AI | textarea | Button click | Structured parsing |
+| `gemini` | Google Gemini | textarea | Button click | Markdown elements |
+| `deepseek` | DeepSeek Chat | textarea (React) | Enter key | `ds-markdown` elements |
+| `kimi` | Kimi AI | contenteditable div | Button click | Markdown elements |
+| `grok` | xAI Grok | ProseMirror div | **Ctrl+Enter** | Markdown elements |
+| `qwen` | Qwen AI (search mode) | textarea | Enter key | mds count stabilization |
+| `glm` | Zhipu GLM | textarea (Element UI) | Button click | Markdown elements |
+
+### CDP Architecture
 
 ```
-User Query
+US Service → CDP WebSocket → TabBitBrowser
   ↓
-Intent Detection (code / academic / knowledge / news / general / content)
-  ↓
-TabBit Always Selected + Smart Module Selection (3-8 modules)
-  ↓
-True Parallel Search (asyncio.wait FIRST_COMPLETED)
-  ↓
-Phase 1: Collect fast results → Phase 2: Wait for slow modules
-  ↓
-RRF Fusion + Smart Dedup
-  ↓
-TabBit Results On Top → Final Results
+1. Target.createTarget (new tab)
+2. Wait for DOM ready
+3. Focus input element
+4. Input.dispatchKeyEvent (char by char)
+5. Send (Enter / Button click / Ctrl+Enter)
+6. Wait for AI response completion
+7. Extract response from DOM
+8. Target.close (cleanup tab)
 ```
 
-## 📦 Modules
+### Key Technical Details
+
+- **Message ID filtering**: CDP responses are filtered by message ID to avoid event notification interference
+- **Proxy bypass**: WebSocket connections temporarily clear proxy env vars to avoid localhost interception
+- **React compatibility**: DeepSeek requires `Input.dispatchKeyEvent` type:'char' for React controlled components
+- **Response detection**: Each AI service has unique DOM structures; Qwen uses markdown element count stabilization
+
+## 📦 All Modules
 
 | Module | Source | Description | Config |
 |--------|--------|-------------|--------|
-| `tabbit` | TabBitBrowser | **Core module** — AI-powered local search via CDP | CDP 9222 |
-| `searxng` | SearXNG | Aggregated search (Baidu/Sogou/360/Google/Bing/DDG/Brave, 11 engines) | Docker |
-| `metaso` | Metaso AI | Best Chinese AI search (concise/deep/research modes) | METASO_TOKEN |
-| `phind` | Phind | AI search engine for developers | Proxy |
-| `perplexity` | Perplexity AI | AI answer engine | PERPLEXITY_API_KEY |
-| `tavily` | Tavily | AI agent-optimized search | TAVILY_API_KEY |
-| `you` | You.com | AI-enhanced search | YOU_API_KEY |
+| `tabbit` | TabBitBrowser | **Core** — AI-powered local search via CDP | CDP 9222 |
+| `gemini` | Google Gemini | Gemini AI search via CDP | CDP 9222 |
+| `deepseek` | DeepSeek | DeepSeek AI chat via CDP | CDP 9222 |
+| `kimi` | Kimi AI | Kimi AI search via CDP | CDP 9222 |
+| `grok` | xAI Grok | Grok AI search via CDP | CDP 9222 |
+| `qwen` | Qwen AI | Qwen search mode via CDP | CDP 9222 |
+| `glm` | Zhipu GLM | GLM AI search via CDP | CDP 9222 |
+| `searxng` | SearXNG | Aggregated search (247+ engines) | Docker |
+| `metaso` | Metaso AI | Chinese AI search (concise/deep/research) | METASO_TOKEN |
+| `web` | TabBit + DDG | TabBit primary + DDG fallback | Proxy |
+| `jina` | Jina Reader | Web content extraction (Markdown) | Proxy |
 | `github` | GitHub + Zread.ai | Repo search + deep analysis | None |
 | `academic` | arXiv + Semantic Scholar | Academic paper search | None |
-| `wiki` | Baidu Baike + Wikipedia | Dual-engine encyclopedia | Proxy (Wiki) |
-| `jina` | Jina Reader | Web content extraction (Markdown) | Proxy |
-| `ddg` | DuckDuckGo | Free unlimited search | None |
-| `brave` | Brave Search | Enterprise web search | BRAVE_API_KEY |
-| `serper` | Serper.dev | Google search results | SERPER_API_KEY |
-| `bing` | Bing Search | Microsoft search | BING_API_KEY |
-| `komo` | Komo | Fast AI search | None |
-| `web` | TabBit + DDG | TabBit primary + DDG fallback | Proxy |
+| `wiki` | Baidu Baike + Wikipedia | Dual-engine encyclopedia | Proxy |
 | `pdf` | pypdf | Online PDF download + parsing | None |
 | `docs` | Doc sites | Technical documentation crawling | None |
+| `ddg` | DuckDuckGo | Free unlimited search | Proxy |
+| `brave` | Brave Search | Enterprise web search | BRAVE_API_KEY |
+| `tavily` | Tavily | AI agent-optimized search | TAVILY_API_KEY |
+| `serper` | Serper.dev | Google search results | SERPER_API_KEY |
+| `perplexity` | Perplexity AI | AI answer engine | PERPLEXITY_API_KEY |
+| `bing` | Bing Search | Microsoft search | BING_API_KEY |
+| `you` | You.com | AI-enhanced search | YOU_API_KEY |
+| `komo` | Komo | Fast AI search | None |
 
 ## 🚀 Quick Start
 
@@ -77,68 +99,55 @@ pip install -r requirements.txt
 ### Run
 
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8900
+# Must unset proxy vars for localhost connections
+env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy \
+  uvicorn app.main:app --host 127.0.0.1 --port 8900
 ```
 
 ### Search
 
 ```bash
-# Smart search (auto module selection, tabbit always first)
+# Smart search (auto module selection)
 curl -s http://localhost:8900/search -X POST \
   -H "Content-Type: application/json" \
   -d '{"query": "how to write FastAPI endpoints", "max_results": 10}' | jq .
 
-# Specific module
-curl -s http://localhost:8900/search/github -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"query": "openclaw", "max_results": 5}' | jq .
-
-# Deep search
+# Specific AI agent
 curl -s http://localhost:8900/search -X POST \
   -H "Content-Type: application/json" \
-  -d '{"query": "transformer attention", "depth": "deep", "max_results": 20}' | jq .
+  -d '{"query": "what is RAG", "sources": ["deepseek", "kimi", "grok"]}' | jq .
+
+# Qwen search mode
+curl -s http://localhost:8900/search -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Meilisearch是什么?", "sources": ["qwen"], "timeout": 120}' | jq .
 ```
 
 ## 🧠 Smart Routing Examples
 
 | Query | Intent | Selected Modules |
 |-------|--------|-----------------|
-| `Python FastAPI how to write endpoints` | code | tabbit → phind → github → searxng |
-| `transformer attention paper` | academic | tabbit → metaso → academic → searxng |
-| `what is RAG technology` | knowledge | tabbit → wiki → searxng → metaso |
-| `atyou2happy/openclaw-unified-search` | code (repo) | tabbit → github → phind |
-| `https://docs.python.org/...` | content | tabbit → jina → github |
+| `Python FastAPI endpoints` | code | tabbit → deepseek → github → searxng |
+| `transformer attention paper` | academic | tabbit → academic → searxng → metaso |
+| `what is RAG technology` | knowledge | tabbit → wiki → searxng → kimi |
+| `atyou2happy/openclaw-unified-search` | code (repo) | tabbit → github → deepseek |
 | `最新AI新闻` | news | tabbit → searxng → bing → brave |
 
 ## 🔄 RRF Fusion
 
-Reciprocal Rank Fusion is the industry-standard algorithm for merging results from multiple search sources:
+Reciprocal Rank Fusion — industry-standard algorithm for merging multi-source results:
 
 ```
 score(d) = Σ (1 / (k + rank_i(d))) × weight(source_i)
 ```
 
-Where `k=60` (standard), and each source has a quality weight:
-- `tabbit: 1.5` | `metaso: 1.4` | `perplexity: 1.35` | `phind: 1.35`
-- URLs appearing in multiple sources get a significant score boost
-
-## 🐳 SearXNG Deployment
-
-```bash
-docker pull searxng/searxng:latest
-
-docker run -d --name searxng --restart unless-stopped \
-  --network host \
-  -v /var/lib/docker/searxng:/etc/searxng:rw \
-  searxng/searxng:latest
-```
+Where `k=60` (standard), with quality weights per source.
 
 ## 🔧 Environment Variables
 
 ```bash
-# Proxy (WSL environment)
-export HTTP_PROXY="http://127.0.0.1:21882"
-export HTTPS_PROXY="http://127.0.0.1:21882"
+# Proxy (WSL environment) — MUST unset for localhost connections
+# export HTTP_PROXY="..." # Do NOT set when running uvicorn
 
 # Optional API Keys
 export METASO_TOKEN="your-tid-token"
@@ -156,59 +165,52 @@ export GITHUB_TOKEN="xxx"
 ```
 openclaw-unified-search/
 ├── app/
-│   ├── main.py          # FastAPI entry
-│   ├── engine.py        # v4 — True parallel engine + RRF fusion
-│   ├── config.py        # Config (proxy etc.)
-│   ├── models.py        # Data models
+│   ├── main.py          # FastAPI entry + module registration
+│   ├── engine.py        # v4 — Parallel engine + RRF fusion
+│   ├── config.py        # Config (proxy, CDP port)
+│   ├── models.py        # Data models (SearchRequest, SearchResult)
 │   ├── cache.py         # LRU cache
 │   ├── router.py        # API routes
 │   └── modules/
-│       ├── __init__.py  # Module registry
-│       ├── base.py      # Base class
-│       ├── tabbit.py    # v2 — Structured multi-result parsing
+│       ├── __init__.py  # Module registry (auto_register)
+│       ├── base.py      # BaseSearchModule
+│       ├── tabbit.py    # Core CDP search
+│       ├── gemini.py    # Google Gemini CDP
+│       ├── deepseek.py  # DeepSeek CDP (React textarea)
+│       ├── kimi.py      # Kimi CDP (contenteditable)
+│       ├── grok.py      # Grok CDP (ProseMirror + Ctrl+Enter)
+│       ├── qwen.py      # Qwen CDP (search mode + mds stabilization)
+│       ├── glm.py       # GLM CDP (Element UI)
 │       ├── searxng.py   # SearXNG aggregation
-│       ├── metaso.py    # Metaso AI search
-│       ├── phind.py     # Phind developer search
-│       ├── perplexity.py # Perplexity AI
-│       ├── ddg.py       # DuckDuckGo
-│       ├── bing.py      # Bing Search
-│       ├── you.py       # You.com
-│       ├── komo.py      # Komo
-│       ├── tavily.py    # Tavily
-│       ├── brave.py     # Brave Search
-│       ├── serper.py    # Serper.dev
+│       ├── metaso.py    # Metaso AI
+│       ├── web.py       # TabBit + DDG
+│       ├── jina.py      # Jina Reader
 │       ├── github.py    # GitHub + Zread
 │       ├── wiki.py      # Baidu Baike + Wikipedia
-│       ├── jina.py      # Jina Reader
 │       ├── pdf.py       # PDF parsing
 │       ├── docs.py      # Doc sites
-│       └── academic.py  # Academic papers
+│       ├── academic.py  # Academic papers
+│       ├── ddg.py       # DuckDuckGo
+│       ├── bing.py      # Bing
+│       ├── you.py       # You.com
+│       ├── komo.py      # Komo
+│       ├── brave.py     # Brave
+│       ├── tavily.py    # Tavily
+│       ├── serper.py    # Serper
+│       └── perplexity.py # Perplexity
 ├── tests/
-│   └── test_search.py   # 36 tests
-├── README.md            # English docs
-├── README_CN.md         # Chinese docs
+│   └── test_search.py
+├── README.md
 └── pyproject.toml
 ```
 
 ## 📊 Tech Stack
 
 - **Python 3.12** + FastAPI + httpx + pydantic v2
+- **Chrome DevTools Protocol** — AI agent interaction via TabBitBrowser
 - **asyncio.wait(FIRST_COMPLETED)** — True parallel module execution
-- **Reciprocal Rank Fusion** — Industry-standard multi-source result merging
-- **TabBitBrowser CDP** — AI-powered local search
-
-## 📊 v4 vs v3 Comparison
-
-| Feature | v3 | v4 |
-|---------|----|----|
-| Execution | Sequential for loop | True parallel (asyncio.wait) |
-| Tabbit | In queue, may not be first | Always first, hardcoded priority |
-| Fusion | Simple weight sorting | RRF (Reciprocal Rank Fusion) |
-| Dedup | URL + title prefix | URL + title similarity + metadata merge |
-| Module count | Fixed 5 | Adaptive 3-8 based on intent |
-| News intent | Not detected | Detected and routed |
-| Tabbit results | Single text blob | Structured multi-result |
-| Tests | 22 | 36 |
+- **Reciprocal Rank Fusion** — Multi-source result merging
+- **websockets** — CDP communication with message ID filtering
 
 ## 📄 License
 

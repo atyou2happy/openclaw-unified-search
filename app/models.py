@@ -9,6 +9,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="搜索关键词/问题")
     sources: list[str] = Field(default_factory=list, description="指定数据源，空=全部可用")
     max_results: int = Field(default=10, ge=1, le=50, description="每个源最大结果数")
+    limit: int = Field(default=10, ge=1, le=50, description="结果数量限制")
     timeout: int = Field(default=30, ge=5, le=120, description="超时秒数")
     depth: str = Field(default="normal", pattern="^(quick|normal|deep)$", description="搜索深度")
     language: str = Field(default="auto", description="语言: auto|zh|en")

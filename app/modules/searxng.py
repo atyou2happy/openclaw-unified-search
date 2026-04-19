@@ -10,7 +10,7 @@ class SearXNGModule(BaseSearchModule):
     name = "searxng"
     description = "SearXNG 聚合搜索（Google/Bing/DDG/Brave 等 247+ 引擎）"
     BASE_URL = "http://127.0.0.1:8080"
-    health_check_timeout = 15.0  # Docker 网络可能慢
+    health_check_timeout = 30.0  # Docker 网络可能慢
 
     async def health_check(self) -> bool:
         try:

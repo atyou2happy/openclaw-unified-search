@@ -27,6 +27,7 @@ def auto_register():
     """自动导入并注册所有模块"""
     from app.modules import (
         tabbit,
+        gemini,
         web,
         github,
         pdf,
@@ -43,7 +44,12 @@ def auto_register():
         bing,
         you,
         komo,
-        perplexity,  # noqa: F401
+        perplexity,
+        deepseek,
+        glm,
+        kimi,
+        grok,
+        qwen,  # noqa: F401
     )
 
     modules = []
@@ -58,6 +64,30 @@ def auto_register():
 
     # TabBitBrowser
     m = tabbit.TabBitModule()
+    register(m); modules.append(m)
+
+    # Gemini AI (TabBitBrowser CDP)
+    m = gemini.GeminiModule()
+    register(m); modules.append(m)
+
+    # DeepSeek AI (TabBitBrowser CDP)
+    m = deepseek.DeepSeekModule()
+    register(m); modules.append(m)
+
+    # GLM AI (TabBitBrowser CDP)
+    m = glm.GLMModule()
+    register(m); modules.append(m)
+
+    # Kimi AI (TabBitBrowser CDP)
+    m = kimi.KimiModule()
+    register(m); modules.append(m)
+
+    # Grok AI (TabBitBrowser CDP)
+    m = grok.GrokModule()
+    register(m); modules.append(m)
+
+    # Qwen AI (TabBitBrowser CDP)
+    m = qwen.QwenModule()
     register(m); modules.append(m)
 
     # Web Search (TabBit 优先, DDG 备用)

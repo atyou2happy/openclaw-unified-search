@@ -555,9 +555,7 @@ class SearchEngine:
         # 2. 选择模块（tabbit 始终在列）
         if request.sources:
             selected = [s for s in request.sources if s in self._modules]
-            # 如果用户指定了 sources，仍确保 tabbit 在列（如果存在）
-            if "tabbit" in self._modules and "tabbit" not in selected:
-                selected.insert(0, "tabbit")
+            # 用户明确指定 sources 时不再强制加 tabbit
         else:
             selected = QueryIntent.select_modules(intent, self._modules)
 
@@ -584,7 +582,7 @@ class SearchEngine:
 
         # Phase 2: 等待结果 — 用 FIRST_COMPLETED 逐个收集
         min_results = max(3, request.max_results // 2)
-        phase1_timeout = min(request.timeout * 0.6, 15)  # 快阶段超时
+        phase1_timeout = min(request.timeout * 0.6, 45)  # 快阶段超时
         phase1_start = time.time()
 
         pending = set(tasks.values())
@@ -638,7 +636,7 @@ class SearchEngine:
             for task in remaining_tasks:
                 task.cancel()
         else:
-            phase2_timeout = max(3, request.timeout * 0.3)
+            phase2_timeout = max(3, request.timeout * 0.4)
             if remaining_tasks:
                 try:
                     done2, still_pending = await asyncio.wait(
@@ -738,6 +736,8 @@ class SearchEngine:
         module: BaseSearchModule, request: SearchRequest
     ) -> list[SearchResult]:
         try:
+            # Reset cached availability so it re-checks
+            module.reset_availability()
             if not await module.is_available():
                 return []
             return await module.search(request)
