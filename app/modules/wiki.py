@@ -18,6 +18,7 @@ class WikiModule(BaseSearchModule):
             kwargs = {"timeout": 5}
             if proxy:
                 kwargs["proxy"] = proxy
+            kwargs["verify"] = False  # WestWorld self-signed cert
             async with httpx.AsyncClient(**kwargs) as client:
                 r = await client.get(
                     "https://baike.baidu.com/item/Python",
@@ -49,6 +50,7 @@ class WikiModule(BaseSearchModule):
         kwargs = {"timeout": 15, "follow_redirects": True}
         if proxy:
             kwargs["proxy"] = proxy
+            kwargs["verify"] = False  # WestWorld self-signed cert
 
         results = []
         try:
@@ -127,6 +129,7 @@ class WikiModule(BaseSearchModule):
         kwargs = {"timeout": 10}
         if proxy:
             kwargs["proxy"] = proxy
+            kwargs["verify"] = False  # WestWorld self-signed cert
 
         lang = "zh" if request.language in ("zh", "auto") else "en"
         results = []

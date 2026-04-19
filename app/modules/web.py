@@ -30,7 +30,7 @@ class WebSearchModule(BaseSearchModule):
 
     async def _check_tabbit(self) -> bool:
         try:
-            async with _proxy_client(timeout=5) as client:
+            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
                 resp = await client.get(
                     f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
                 )

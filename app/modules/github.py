@@ -33,6 +33,7 @@ class GitHubModule(BaseSearchModule):
         proxy = Config.get_proxy()
         if proxy:
             kwargs["proxy"] = proxy
+            kwargs["verify"] = False  # WestWorld proxy uses self-signed cert
         return kwargs
 
     async def health_check(self) -> bool:
