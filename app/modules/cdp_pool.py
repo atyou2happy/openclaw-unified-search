@@ -20,27 +20,37 @@ CDP_LIST_URL = f"http://{CDP_HOST}:{CDP_PORT}/json"
 # 连接状态
 _cdp_available = None
 _last_check = 0
-_check_interval = 60  # 60秒检查一次
+_check_interval = 60
+_check_lock = None  # 60秒检查一次
 
 
 async def is_cdp_available(force: bool = False) -> bool:
-    """检查 CDP 是否可用（带缓存）"""
-    global _cdp_available, _last_check
+    """检查 CDP 是否可用（带缓存 + 锁，避免并发重复检查）"""
+    global _cdp_available, _last_check, _check_lock
     
+    import asyncio
     now = time.time()
     if not force and _cdp_available is not None and (now - _last_check) < _check_interval:
         return _cdp_available
     
-    try:
-        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-            r = await client.get(CDP_VERSION_URL)
-            _cdp_available = r.status_code == 200
-            _last_check = now
+    if _check_lock is None:
+        _check_lock = asyncio.Lock()
+    
+    async with _check_lock:
+        # Double-check after acquiring lock
+        if not force and _cdp_available is not None and (now - _last_check) < _check_interval:
             return _cdp_available
-    except Exception:
-        _cdp_available = False
-        _last_check = now
-        return False
+        
+        try:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
+                r = await client.get(CDP_VERSION_URL)
+                _cdp_available = r.status_code == 200
+                _last_check = now
+                return _cdp_available
+        except Exception:
+            _cdp_available = False
+            _last_check = now
+            return False
 
 
 async def get_cdp_ws_url() -> str | None:
