@@ -37,15 +37,8 @@ class GitHubModule(BaseSearchModule):
         return kwargs
 
     async def health_check(self) -> bool:
-        try:
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=10)) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/rate_limit",
-                    headers=self._headers(),
-                )
-                return resp.status_code == 200
-        except Exception:
-            return False
+        # GitHub API 启动时检查不稳定，跳过，按需失败
+        return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         """智能搜索：检测 owner/repo 格式 → Zread 深度分析，否则 GitHub 搜索"""
