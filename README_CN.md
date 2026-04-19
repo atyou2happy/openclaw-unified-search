@@ -1,68 +1,106 @@
 <p align="center">
-  <h1 align="center">🔍 OpenClaw Unified Search</h1>
+  <h1 align="center">🔍 OpenClaw 统一搜索</h1>
   <p align="center">
-    <b>智能调度统一搜索服务 — 18 模块 + 真并行引擎 v4 + RRF 融合</b><br/>
+    <b>智能统一搜索服务 — 24 个模块 + 7 个 CDP AI 代理 + 质量降级策略</b><br/>
     <a href="README.md">English</a> | 中文
   </p>
 </p>
 
 ---
 
-一个模块化的统一搜索服务，专为 [OpenClaw](https://github.com/openclaw) 设计。所有搜索需求通过一个 API 完成，返回全面、准确、最新的高质量信息。
+为 [OpenClaw](https://github.com/openclaw) 设计的模块化统一搜索服务。所有搜索需求通过一个 API 完成，返回全面、准确、最新的信息。
 
 ## ✨ 核心特性
 
-- ⚡ **真并行引擎 v4** — `asyncio.wait(FIRST_COMPLETED)` 替代串行循环，所有模块真正并行执行
-- 🥇 **TabBit 始终优先** — 核心模块硬编码最高优先级，结果始终置顶
-- 🔀 **RRF 融合** — Reciprocal Rank Fusion（业界标准算法）实现多源结果融合
-- 🧠 **智能路由 v4** — 意图识别 + 自适应模块数（3-8个）+ 新闻意图检测
-- 🧩 **18 个模块** — TabBitBrowser、SearXNG、秘塔AI、Phind、Perplexity、DDG、Jina、GitHub、PDF、文档、学术、百科、Brave、Tavily、Serper、Bing、You.com、Komo
-- 🧠 **智能去重 v4** — URL 去重 + 标题相似度（SequenceMatcher > 0.85）+ 跨源元数据合并
-- 🧪 **36 个测试** — 意图识别、RRF 融合、并行执行、tabbit 优先级、结构化解析
+- ⚡ **真并行引擎 v4** — `asyncio.wait(FIRST_COMPLETED)`，所有模块并发执行
+- 🤖 **7 个 CDP AI 代理** — TabBit、DeepSeek、Gemini、Grok、Kimi、GLM、Qwen 通过 TabBitBrowser CDP
+- 🔄 **质量降级** — 最佳 AI 代理失败时自动降级到次优代理
+- 🔀 **RRF 融合** — Reciprocal Rank Fusion 多源结果合并
+- 🧠 **智能路由** — 意图识别 + 自适应模块数量（3-8 个，基于查询复杂度）
+- 🧩 **24 个模块** — 7 个 CDP AI 代理 + 17 个传统搜索模块
+- 🧠 **智能去重** — URL 去重 + 标题相似度 + 元数据合并
 - 💾 **LRU 缓存** — 可配置 TTL，避免重复搜索
 - 🔌 **零门槛扩展** — 实现 `BaseSearchModule` 即可添加新模块
 
-## 🏗️ 架构
+## 🔄 质量降级策略
+
+CDP AI 代理按搜索质量排序。最佳代理失败或超时时，自动降级到下一个：
 
 ```
-用户查询
-  ↓
-意图识别（编程/学术/知识/新闻/综合/内容）
-  ↓
-TabBit 始终选中 + 智能选模块（3-8 个）
-  ↓
-真并行搜索（asyncio.wait FIRST_COMPLETED）
-  ↓
-Phase 1: 收集快速结果 → Phase 2: 等待慢模块
-  ↓
-RRF 融合 + 智能去重
-  ↓
-TabBit 结果置顶 → 最终结果
+tabbit (0.95) → deepseek (0.92) → gemini (0.90) → grok (0.88) → kimi (0.86) → glm (0.85) → qwen (0.84)
 ```
 
-## 📦 模块列表
+```bash
+# CDP 降级搜索 — 第一个成功即返回
+curl -s http://localhost:8900/search/cdp -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "什么是RAG?", "timeout": 120}' | jq .
+```
 
-| 模块 | 来源 | 说明 | 需配置 |
-|------|------|------|--------|
-| `tabbit` | TabBitBrowser | **核心模块** — AI 驱动的本地搜索（CDP） | CDP 9222 |
-| `searxng` | SearXNG | 聚合搜索（百度/搜狗/360/Google/Bing/DDG/Brave 等 11 引擎） | Docker |
-| `metaso` | 秘塔AI搜索 | 中文 AI 搜索最强（简洁/深入/研究模式） | METASO_TOKEN |
-| `phind` | Phind | 程序员 AI 搜索引擎 | 代理 |
-| `perplexity` | Perplexity AI | AI 答案引擎 | PERPLEXITY_API_KEY |
-| `tavily` | Tavily | AI Agent 专用搜索 | TAVILY_API_KEY |
-| `you` | You.com | AI 增强搜索 | YOU_API_KEY |
-| `github` | GitHub + Zread.ai | 仓库搜索 + 深度分析 | 无 |
-| `academic` | arXiv + Semantic Scholar | 学术论文搜索 | 无 |
-| `wiki` | 百度百科 + 维基百科 | 双引擎百科查询 | 代理(维基) |
-| `jina` | Jina Reader | 网页内容提取（Markdown） | 代理 |
-| `ddg` | DuckDuckGo | 免费无限搜索 | 无需 |
-| `brave` | Brave Search | 企业级 Web 搜索 | BRAVE_API_KEY |
+## 🤖 CDP AI 代理模块
+
+通过 Chrome DevTools Protocol (CDP) 经 TabBitBrowser 与 AI 聊天服务交互：
+
+| 模块 | 服务 | 输入方式 | 发送方式 | 回复检测 |
+|------|------|---------|---------|---------|
+| `tabbit` | TabBitBrowser AI | textarea | 按钮点击 | 结构化解析 |
+| `deepseek` | DeepSeek Chat | textarea (React) | Enter 键 | `ds-markdown` 元素 |
+| `gemini` | Google Gemini | textarea | 按钮点击 | Markdown 元素 |
+| `grok` | xAI Grok | ProseMirror div | **Ctrl+Enter** | Markdown 元素 |
+| `kimi` | Kimi AI | contenteditable div | 按钮点击 | Markdown 元素 |
+| `glm` | 智谱 GLM | textarea (Element UI) | 按钮点击 | Markdown 元素 |
+| `qwen` | 通义千问 (搜索模式) | textarea | Enter 键 | mds 计数稳定 |
+
+### CDP 架构
+
+```
+搜索服务 → CDP WebSocket → TabBitBrowser
+  ↓
+1. Target.createTarget（新建标签页）
+2. 等待 DOM 就绪
+3. 聚焦输入元素
+4. Input.dispatchKeyEvent（逐字符输入）
+5. 发送（Enter / 按钮点击 / Ctrl+Enter）
+6. 等待 AI 回复完成
+7. 从 DOM 提取回复
+8. Target.close（清理标签页）
+```
+
+### 关键技术细节
+
+- **消息 ID 过滤**：CDP 响应按 ID 过滤，避免事件通知干扰
+- **代理绕过**：WebSocket 连接清除代理环境变量，避免 localhost 拦截
+- **React 兼容**：DeepSeek 需要 `Input.dispatchKeyEvent` type:'char' 处理受控组件
+- **回复检测**：每个 AI 服务有独特的 DOM 结构；Qwen 使用 markdown 元素计数稳定方案
+
+## 📦 全部模块
+
+| 模块 | 来源 | 说明 | 配置 |
+|------|------|------|------|
+| `tabbit` | TabBitBrowser | **核心** — AI 搜索 via CDP | CDP 9222 |
+| `deepseek` | DeepSeek | DeepSeek AI 聊天 via CDP | CDP 9222 |
+| `gemini` | Google Gemini | Gemini AI 搜索 via CDP | CDP 9222 |
+| `grok` | xAI Grok | Grok AI 搜索 via CDP | CDP 9222 |
+| `kimi` | Kimi AI | Kimi AI 搜索 via CDP | CDP 9222 |
+| `glm` | 智谱 GLM | GLM AI 搜索 via CDP | CDP 9222 |
+| `qwen` | 通义千问 | 千问搜索模式 via CDP | CDP 9222 |
+| `searxng` | SearXNG | 聚合搜索（247+ 引擎） | Docker |
+| `metaso` | 秘塔 AI | 中文 AI 搜索 | METASO_TOKEN |
+| `web` | TabBit + DDG | TabBit 主 + DDG 备用 | Proxy |
+| `jina` | Jina Reader | 网页内容提取（Markdown） | Proxy |
+| `github` | GitHub + Zread.ai | 仓库搜索 + 深度分析 | None |
+| `academic` | arXiv + Semantic Scholar | 学术论文搜索 | None |
+| `wiki` | 百度百科 + Wikipedia | 双引擎百科 | Proxy |
+| `pdf` | pypdf | 在线 PDF 下载 + 解析 | None |
+| `docs` | 文档站点 | 技术文档爬取 | None |
+| `ddg` | DuckDuckGo | 免费无限搜索 | Proxy |
+| `brave` | Brave Search | 企业级网页搜索 | BRAVE_API_KEY |
+| `tavily` | Tavily | AI 代理优化搜索 | TAVILY_API_KEY |
 | `serper` | Serper.dev | Google 搜索结果 | SERPER_API_KEY |
+| `perplexity` | Perplexity AI | AI 回答引擎 | PERPLEXITY_API_KEY |
 | `bing` | Bing Search | 微软搜索 | BING_API_KEY |
-| `komo` | Komo | 快速 AI 搜索 | 无需 |
-| `web` | TabBit + DDG | TabBit 优先 + DDG 备用 | 代理 |
-| `pdf` | pypdf | 在线 PDF 获取 + 解析 | 无 |
-| `docs` | 文档站点 | 技术文档抓取 | 无 |
+| `you` | You.com | AI 增强搜索 | YOU_API_KEY |
+| `komo` | Komo | 快速 AI 搜索 | None |
 
 ## 🚀 快速开始
 
@@ -77,68 +115,54 @@ pip install -r requirements.txt
 ### 启动
 
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8900
+# 必须清除代理变量以连接 localhost
+env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy \
+  uvicorn app.main:app --host 127.0.0.1 --port 8900
 ```
 
 ### 搜索
 
 ```bash
-# 智能搜索（自动选模块，tabbit 始终优先）
+# 智能搜索（自动选择模块）
 curl -s http://localhost:8900/search -X POST \
   -H "Content-Type: application/json" \
-  -d '{"query": "FastAPI 怎么写接口", "max_results": 10}' | jq .
+  -d '{"query": "如何编写 FastAPI 端点", "max_results": 10}' | jq .
 
-# 指定模块
-curl -s http://localhost:8900/search/github -X POST \
+# CDP 降级搜索（质量排序自动降级）
+curl -s http://localhost:8900/search/cdp -X POST \
   -H "Content-Type: application/json" \
-  -d '{"query": "openclaw", "max_results": 5}' | jq .
+  -d '{"query": "什么是RAG?", "timeout": 120}' | jq .
 
-# 深度搜索
+# 指定 AI 代理
 curl -s http://localhost:8900/search -X POST \
   -H "Content-Type: application/json" \
-  -d '{"query": "transformer attention", "depth": "deep", "max_results": 20}' | jq .
+  -d '{"query": "什么是RAG", "sources": ["deepseek", "kimi", "grok"]}' | jq .
 ```
 
-## 🧠 智能调度示例
+## 🧠 智能路由示例
 
-| 查询 | 识别意图 | 选择模块 |
-|------|---------|---------|
-| `Python FastAPI 怎么写接口` | code | tabbit → phind → github → searxng |
-| `transformer attention 论文` | academic | tabbit → metaso → academic → searxng |
-| `什么是 RAG 技术` | knowledge | tabbit → wiki → searxng → metaso |
-| `atyou2happy/openclaw-unified-search` | code (repo) | tabbit → github → phind |
-| `https://docs.python.org/...` | content | tabbit → jina → github |
+| 查询 | 意图 | 选中模块 |
+|------|------|---------|
+| `Python FastAPI 端点` | code | tabbit → deepseek → github → searxng |
+| `transformer attention 论文` | academic | tabbit → academic → searxng → metaso |
+| `什么是 RAG 技术` | knowledge | tabbit → wiki → searxng → kimi |
 | `最新AI新闻` | news | tabbit → searxng → bing → brave |
 
-## 🔄 RRF 融合算法
+## 🔄 RRF 融合
 
-Reciprocal Rank Fusion 是业界标准的多源搜索结果融合算法：
+Reciprocal Rank Fusion — 业界标准的多源结果合并算法：
 
 ```
 score(d) = Σ (1 / (k + rank_i(d))) × weight(source_i)
 ```
 
-其中 `k=60`（标准值），每个源有质量权重：
-- `tabbit: 1.5` | `metaso: 1.4` | `perplexity: 1.35` | `phind: 1.35`
-- 出现在多个源中的 URL 会获得显著的分数提升
-
-## 🐳 SearXNG 部署
-
-```bash
-docker pull searxng/searxng:latest
-
-docker run -d --name searxng --restart unless-stopped \
-  --network host \
-  -v /var/lib/docker/searxng:/etc/searxng:rw \
-  searxng/searxng:latest
-```
+其中 `k=60`（标准值），每个源有质量权重。
 
 ## 🔧 环境变量
 
 ```bash
-# 代理（WSL 环境）
-export HTTP_PROXY="http://127.0.0.1:21882"
-export HTTPS_PROXY="http://127.0.0.1:21882"
+# 代理 — 启动 uvicorn 时必须清除
+# 不要设置 HTTP_PROXY
 
 # 可选 API Keys
 export METASO_TOKEN="your-tid-token"
@@ -156,54 +180,38 @@ export GITHUB_TOKEN="xxx"
 ```
 openclaw-unified-search/
 ├── app/
-│   ├── main.py          # FastAPI 入口
-│   ├── engine.py        # v4 — 真并行引擎 + RRF 融合
-│   ├── config.py        # 配置（代理等）
+│   ├── main.py          # FastAPI 入口 + 模块注册
+│   ├── engine.py        # v4 — 并行引擎 + RRF 融合 + CDP 降级
+│   ├── config.py        # 配置（代理、CDD 端口）
 │   ├── models.py        # 数据模型
 │   ├── cache.py         # LRU 缓存
 │   ├── router.py        # API 路由
-│   └── modules/
-│       ├── __init__.py  # 模块注册
-│       ├── base.py      # 基类
-│       ├── tabbit.py    # v2 — 结构化多结果解析
+│   └── modules/         # 24 个搜索模块
+│       ├── tabbit.py    # 核心 CDP 搜索
+│       ├── deepseek.py  # DeepSeek CDP
+│       ├── gemini.py    # Gemini CDP
+│       ├── grok.py      # Grok CDP
+│       ├── kimi.py      # Kimi CDP
+│       ├── glm.py       # GLM CDP
+│       ├── qwen.py      # Qwen CDP
 │       ├── searxng.py   # SearXNG 聚合
-│       ├── metaso.py    # 秘塔AI搜索
-│       ├── phind.py     # Phind 程序员搜索
-│       ├── perplexity.py # Perplexity AI
-│       ├── ddg.py       # DuckDuckGo
-│       ├── bing.py      # Bing Search
-│       ├── you.py       # You.com
-│       ├── komo.py      # Komo
-│       ├── tavily.py    # Tavily
-│       ├── brave.py     # Brave Search
-│       ├── serper.py    # Serper.dev
-│       ├── github.py    # GitHub + Zread
-│       ├── wiki.py      # 百度百科 + 维基百科
-│       ├── jina.py      # Jina Reader
-│       ├── pdf.py       # PDF 解析
-│       ├── docs.py      # 文档站点
-│       └── academic.py  # 学术论文
+│       ├── metaso.py    # 秘塔 AI
+│       └── ...          # + 14 个模块
 ├── tests/
-│   └── test_search.py   # 36 个测试
-├── README.md            # English Docs
-├── README_CN.md         # 中文文档
+├── README.md
+├── README_CN.md
 └── pyproject.toml
 ```
 
-## 📊 v4 vs v3 对比
+## 📊 技术栈
 
-| 特性 | v3 | v4 |
-|------|----|----|
-| 执行方式 | 串行 for 循环 | 真并行 (asyncio.wait) |
-| Tabbit | 在队列中，可能不是第一个 | 始终第一，硬编码最高优先级 |
-| 融合算法 | 简单权重排序 | RRF（Reciprocal Rank Fusion） |
-| 去重 | URL + 标题前缀 | URL + 标题相似度 + 元数据合并 |
-| 模块数量 | 固定 5 个 | 自适应 3-8 个 |
-| 新闻意图 | 不检测 | 检测并路由 |
-| Tabbit 结果 | 单一文本块 | 结构化多结果 |
-| 测试数 | 22 | 36 |
+- **Python 3.12** + FastAPI + httpx + pydantic v2
+- **Chrome DevTools Protocol** — 通过 TabBitBrowser 与 AI 代理交互
+- **asyncio.wait(FIRST_COMPLETED)** — 真并行模块执行
+- **Reciprocal Rank Fusion** — 多源结果合并
+- **websockets** — CDP 通信（消息 ID 过滤）
 
-## 📄 License
+## 📄 许可证
 
 MIT
 
