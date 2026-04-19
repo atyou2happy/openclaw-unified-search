@@ -96,3 +96,39 @@ async def cache_clear():
     """清除缓存"""
     count = cache.clear()
     return {"cleared": count}
+
+
+@router.post("/reload")
+async def reload_modules():
+    """热加载模块 — 不重启服务，重新注册所有模块
+    
+    适用场景：修改了模块代码后，调用此端点重新加载
+    """
+    from app.modules import auto_register, _registry
+    
+    # 清空旧注册
+    old_count = len(_registry)
+    _registry.clear()
+    
+    # 重新注册
+    modules = auto_register()
+    
+    # 重新加载引擎
+    engine.load_modules()
+    
+    # 检查可用性
+    import asyncio
+    available = 0
+    for m in modules:
+        try:
+            if await asyncio.wait_for(m.health_check(), timeout=5):
+                available += 1
+        except:
+            pass
+    
+    return {
+        "old_modules": old_count,
+        "new_modules": len(modules),
+        "available": available,
+        "status": "reloaded"
+    }

@@ -163,6 +163,12 @@ class QueryIntent:
             "speed": "slow",
             "quality": 0.86,
         },
+        "meilisearch": {
+            "types": {"general", "research", "knowledge", "local"},
+            "langs": {"zh", "en"},
+            "speed": "fast",
+            "quality": 0.80,
+        },
         "qwen": {
             "types": {"general", "research", "knowledge"},
             "langs": {"zh", "en"},

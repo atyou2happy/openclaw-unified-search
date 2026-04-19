@@ -49,7 +49,8 @@ def auto_register():
         glm,
         kimi,
         grok,
-        qwen,  # noqa: F401
+        qwen,
+        meilisearch,  # noqa: F401
     )
 
     modules = []
@@ -88,6 +89,10 @@ def auto_register():
 
     # Qwen AI (TabBitBrowser CDP)
     m = qwen.QwenModule()
+    register(m); modules.append(m)
+
+    # Meilisearch (本地知识库)
+    m = meilisearch.MeilisearchModule()
     register(m); modules.append(m)
 
     # Web Search (TabBit 优先, DDG 备用)
