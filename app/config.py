@@ -22,7 +22,7 @@ class Config:
 
     # Proxy (for WSL / restricted networks)
     # Set HTTP_PROXY / HTTPS_PROXY env vars, or configure here
-    PROXY_URL: str | None = None  # e.g. "http://127.0.0.1:7890"
+    PROXY_URL: str | None = "http://127.0.0.1:21882"  # WestWorld proxy for external access
 
     # TabBitBrowser
     TABBIT_CDP_PORT: int = 9222
