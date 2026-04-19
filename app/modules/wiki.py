@@ -12,13 +12,9 @@ class WikiModule(BaseSearchModule):
     description = "百科搜索（百度百科 + 维基百科）"
 
     async def health_check(self) -> bool:
-        # 百度百科直连即可
+        # 百度百科直连，不走代理
         try:
-            proxy = Config.get_proxy()
-            kwargs = {"timeout": 5}
-            if proxy:
-                kwargs["proxy"] = proxy
-            kwargs["verify"] = False  # WestWorld self-signed cert
+            kwargs = {"timeout": 10, "trust_env": False}
             async with httpx.AsyncClient(**kwargs) as client:
                 r = await client.get(
                     "https://baike.baidu.com/item/Python",
