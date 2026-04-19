@@ -159,6 +159,13 @@ async def close_tab(target_id: str) -> bool:
 
 # ===== 心跳集成 =====
 
+def reset_cache():
+    """重置 CDP 可用性缓存"""
+    global _cdp_available, _last_check
+    _cdp_available = None
+    _last_check = 0
+
+
 async def heartbeat_check() -> str:
     """心跳检查（供 HEARTBEAT 调用）
     

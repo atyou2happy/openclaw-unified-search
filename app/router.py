@@ -105,10 +105,12 @@ async def reload_modules():
     适用场景：修改了模块代码后，调用此端点重新加载
     """
     from app.modules import auto_register, _registry
+    from app.modules.cdp_pool import reset_cache
     
     # 清空旧注册
     old_count = len(_registry)
     _registry.clear()
+    reset_cache()
     
     # 重新注册
     modules = auto_register()
@@ -121,7 +123,7 @@ async def reload_modules():
     available = 0
     for m in modules:
         try:
-            if await asyncio.wait_for(m.health_check(), timeout=5):
+            if await asyncio.wait_for(m.health_check(), timeout=10):
                 available += 1
         except:
             pass
