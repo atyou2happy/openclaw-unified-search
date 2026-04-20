@@ -21,6 +21,7 @@ class DeepseekModule(BaseSearchModule):
     TEXTAREA_SELECTOR = 'textarea'
 
     def __init__(self):
+        super().__init__()
         self._is_available = None
         self._cdp_port = 9222
 
@@ -30,6 +31,7 @@ class DeepseekModule(BaseSearchModule):
         return True
 
     def reset_availability(self):
+        super().__init__()
         self._is_available = None
 
     async def _wait_for_selector(self, ws_url: str, selector: str, timeout: int = 15) -> bool:

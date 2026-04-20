@@ -20,6 +20,7 @@ class GeminiModule(BaseSearchModule):
     THINKING_PREFIX = "Let me think"
 
     def __init__(self):
+        super().__init__()
         self._is_available = None
 
     async def health_check(self) -> bool:
@@ -28,6 +29,7 @@ class GeminiModule(BaseSearchModule):
         return True
 
     def reset_availability(self):
+        super().__init__()
         self._is_available = None
 
     async def _wait_for_selector(self, ws_url, selector, timeout=15):
