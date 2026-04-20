@@ -1,10 +1,54 @@
-"""Module registry — 自动发现和注册搜索模块."""
+"""Module registry — 动态发现和注册搜索模块.
 
-from typing import Dict, Type
+借鉴 Google Workspace CLI (gws) 的 Discovery Service 思路：
+- 扫描 app/modules/ 目录下所有 .py 文件
+- 自动查找 BaseSearchModule 子类
+- 通过类属性声明式注册（name/description/dependencies）
+- 无需手动维护模块列表
+
+新增模块只需：
+1. 在 app/modules/ 下创建 .py 文件
+2. 继承 BaseSearchModule 并实现 search()
+3. 设置类属性 name, description
+4. 自动被发现和注册
+"""
+
+import importlib
+import inspect
+import logging
+import os
+from pathlib import Path
+from typing import Dict, List, Type
+
 from app.modules.base import BaseSearchModule
 
+logger = logging.getLogger(__name__)
 
 _registry: Dict[str, BaseSearchModule] = {}
+
+# 模块加载顺序（影响 health_check 优先级）
+# 未在此列表中的模块按字母序排在后面
+_PRIORITY_ORDER = [
+    "searxng",      # 聚合搜索基础
+    "metaso",        # 秘塔AI
+    "tabbit",        # TabBitBrowser
+    "meilisearch",   # 本地知识库
+    "web",           # 网页搜索
+    "jina",          # 网页提取
+    "github",        # GitHub
+    "pdf",           # PDF
+    "docs",          # 文档
+    "academic",      # 学术
+    "wiki",          # 百科
+    "ddg",           # DuckDuckGo
+    # CDP 模块（按降级链顺序）
+    "deepseek", "gemini", "grok", "kimi", "glm", "qwen",
+    # API 模块（需 key）
+    "brave", "tavily", "serper", "perplexity", "bing", "you", "komo",
+]
+
+# 排除的文件（不作为模块加载）
+_EXCLUDED = {"__init__", "base", "cdp_pool"}
 
 
 def register(module: BaseSearchModule) -> None:
@@ -23,136 +67,71 @@ def list_names() -> list[str]:
     return list(_registry.keys())
 
 
+def _discover_module_classes(package_path: Path) -> Dict[str, Type[BaseSearchModule]]:
+    """扫描目录，发现所有 BaseSearchModule 子类"""
+    classes = {}
+
+    for py_file in sorted(package_path.glob("*.py")):
+        module_name = py_file.stem
+
+        # 跳过排除文件
+        if module_name in _EXCLUDED or module_name.startswith("_"):
+            continue
+
+        try:
+            # 动态导入模块
+            mod = importlib.import_module(f"app.modules.{module_name}")
+
+            # 查找所有 BaseSearchModule 子类
+            for attr_name in dir(mod):
+                attr = getattr(mod, attr_name)
+                if (
+                    inspect.isclass(attr)
+                    and issubclass(attr, BaseSearchModule)
+                    and attr is not BaseSearchModule
+                    and hasattr(attr, "name")
+                    and attr.name  # 必须有 name 属性
+                ):
+                    classes[attr.name] = attr
+                    logger.debug(f"Discovered module: {attr.name} from {module_name}.{attr_name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to load module {module_name}: {e}")
+
+    return classes
+
+
 def auto_register():
-    """自动导入并注册所有模块"""
-    from app.modules import (
-        tabbit,
-        gemini,
-        web,
-        github,
-        pdf,
-        docs,
-        academic,
-        jina,
-        wiki,
-        brave,
-        tavily,
-        serper,
-        searxng,
-        metaso,
-        ddg,
-        bing,
-        you,
-        komo,
-        perplexity,
-        deepseek,
-        glm,
-        kimi,
-        grok,
-        qwen,
-        meilisearch,  # noqa: F401
-    )
+    """自动发现、实例化并注册所有搜索模块.
+
+    借鉴 gws Discovery Service:
+    1. 扫描 app/modules/ 目录
+    2. 动态导入每个 .py 文件
+    3. 发现 BaseSearchModule 子类
+    4. 按 _PRIORITY_ORDER 排序后实例化注册
+    """
+    modules_dir = Path(__file__).parent
+    discovered = _discover_module_classes(modules_dir)
+
+    # 按优先级排序
+    def sort_key(name):
+        try:
+            return _PRIORITY_ORDER.index(name)
+        except ValueError:
+            return len(_PRIORITY_ORDER) + ord(name[0])
+
+    sorted_names = sorted(discovered.keys(), key=sort_key)
 
     modules = []
+    for name in sorted_names:
+        cls = discovered[name]
+        try:
+            instance = cls()
+            register(instance)
+            modules.append(instance)
+            logger.info(f"Registered module: {name}")
+        except Exception as e:
+            logger.error(f"Failed to instantiate module {name}: {e}")
 
-    # SearXNG (聚合搜索)
-    m = searxng.SearXNGModule()
-    register(m); modules.append(m)
-
-    # 秘塔AI搜索
-    m = metaso.MetasoModule()
-    register(m); modules.append(m)
-
-    # TabBitBrowser
-    m = tabbit.TabBitModule()
-    register(m); modules.append(m)
-
-    # Gemini AI (TabBitBrowser CDP)
-    m = gemini.GeminiModule()
-    register(m); modules.append(m)
-
-    # DeepSeek AI (TabBitBrowser CDP)
-    m = deepseek.DeepseekModule()
-    register(m); modules.append(m)
-
-    # GLM AI (TabBitBrowser CDP)
-    m = glm.GlmModule()
-    register(m); modules.append(m)
-
-    # Kimi AI (TabBitBrowser CDP)
-    m = kimi.KimiModule()
-    register(m); modules.append(m)
-
-    # Grok AI (TabBitBrowser CDP)
-    m = grok.GrokModule()
-    register(m); modules.append(m)
-
-    # Qwen AI (TabBitBrowser CDP)
-    m = qwen.QwenModule()
-    register(m); modules.append(m)
-
-    # Meilisearch (本地知识库)
-    m = meilisearch.MeilisearchModule()
-    register(m); modules.append(m)
-
-    # Web Search (TabBit 优先, DDG 备用)
-    m = web.WebSearchModule()
-    register(m); modules.append(m)
-
-    # Jina Reader (网页内容提取)
-    m = jina.JinaModule()
-    register(m); modules.append(m)
-
-    # GitHub + Zread.ai
-    m = github.GitHubModule()
-    register(m); modules.append(m)
-
-    # PDF
-    m = pdf.PDFModule()
-    register(m); modules.append(m)
-
-    # Docs
-    m = docs.DocsModule()
-    register(m); modules.append(m)
-
-    # Academic
-    m = academic.AcademicModule()
-    register(m); modules.append(m)
-
-    # Wiki (百度百科 + 维基百科)
-    m = wiki.WikiModule()
-    register(m); modules.append(m)
-
-    # Brave Search (需 BRAVE_API_KEY)
-    m = brave.BraveModule()
-    register(m); modules.append(m)
-
-    # Tavily (需 TAVILY_API_KEY)
-    m = tavily.TavilyModule()
-    register(m); modules.append(m)
-
-    # Serper.dev (需 SERPER_API_KEY)
-    m = serper.SerperModule()
-    register(m); modules.append(m)
-
-    # Perplexity AI (需 PERPLEXITY_API_KEY)
-    m = perplexity.PerplexityModule()
-    register(m); modules.append(m)
-
-    # DuckDuckGo (免费无限)
-    m = ddg.DuckDuckGoModule()
-    register(m); modules.append(m)
-
-    # Bing Search (需 BING_API_KEY)
-    m = bing.BingModule()
-    register(m); modules.append(m)
-
-    # You.com (需 YOU_API_KEY)
-    m = you.YouModule()
-    register(m); modules.append(m)
-
-    # Komo (免费快速)
-    m = komo.KomoModule()
-    register(m); modules.append(m)
-
+    logger.info(f"Auto-registered {len(modules)} modules: {sorted_names}")
     return modules
