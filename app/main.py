@@ -11,7 +11,7 @@ from app.modules import auto_register
 app = FastAPI(
     title="Unified Search",
     description="统一搜索服务 — 全面、准确、最新、高质量的信息获取",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # Include routes
@@ -20,18 +20,27 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup():
-    """Load and register all search modules on startup."""
+    """Load and register all search modules on startup (parallel health check)."""
     modules = auto_register()
     engine.load_modules()
-    available = []
-    for m in modules:
+    
+    # Parallel health check — all modules at once
+    async def check(m):
         try:
-            ok = await asyncio.wait_for(m.is_available(), timeout=6.0)
+            ok = await asyncio.wait_for(m.is_available(), timeout=3.0)
         except (asyncio.TimeoutError, Exception):
             ok = False
+        return m, ok
+    
+    results = await asyncio.gather(*[check(m) for m in modules])
+    
+    available = []
+    for m, ok in results:
         status = "✅" if ok else "❌"
         available.append(f"  {status} {m.name}: {m.description}")
-    print(f"[unified-search] Loaded {len(modules)} modules:")
+    
+    ok_count = sum(1 for _, ok in results if ok)
+    print(f"[unified-search] Loaded {len(modules)} modules ({ok_count} available):")
     for line in available:
         print(line)
 

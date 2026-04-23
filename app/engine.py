@@ -13,6 +13,8 @@ import asyncio
 import re
 import time
 from collections import defaultdict
+import logging
+logger = logging.getLogger(__name__)
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
 from app.models import SearchRequest, SearchResponse, SearchResult
@@ -31,6 +33,30 @@ class QueryIntent:
 
     # 模块能力标签 (v4 — 更精准的描述)
     MODULE_PROFILES = {
+        "reddit": {
+            "types": {"general", "social", "trend", "opinion"},
+            "langs": {"en", "zh"},
+            "speed": "fast",
+            "quality": 0.75,
+        },
+        "hackernews": {
+            "types": {"general", "tech", "code", "trend"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.80,
+        },
+        "youtube": {
+            "types": {"video", "tutorial", "general"},
+            "langs": {"en", "zh"},
+            "speed": "medium",
+            "quality": 0.75,
+        },
+        "github_trending": {
+            "types": {"code", "tech", "trend", "repo"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.70,
+        },
         "searxng": {
             "types": {"general", "news", "image", "video"},
             "langs": {"zh", "en"},
@@ -261,6 +287,26 @@ class QueryIntent:
         if language == "zh" or (language == "auto" and has_chinese):
             intent["hints"].add("chinese")
 
+        # 社交媒体意图
+        social_keywords = [
+            r"\b(reddit|推特|twitter|x\.com|youtube|视频|评论|帖子|post|thread)",
+            r"\b(社区|community|forum|论坛|讨论|discussion)",
+            r"\b(人们怎么说|what people say|opinion|观点|看法)",
+        ]
+        if any(re.search(p, q) for p in social_keywords):
+            intent["types"].add("social")
+            intent["hints"].add("social")
+
+        # 趋势/热门意图
+        trend_keywords = [
+            r"\b(trending|热门|流行|trend|trends|热搜|fire|rising)",
+            r"\b(hacker news|hn|producthunt|product hunt)",
+            r"\b(what.*popular|most.*star|top.*repo)",
+        ]
+        if any(re.search(p, q) for p in trend_keywords):
+            intent["types"].add("trend")
+            intent["hints"].add("trend")
+
         # 默认：general
         if not intent["types"]:
             intent["types"].add("general")
@@ -389,6 +435,10 @@ class ResultMerger:
     # source 模块类型权重 (v4 — AI 答案最高)
     SOURCE_WEIGHTS = {
         "tabbit": 1.5,  # 核心模块，最高优先级
+        "reddit": 1.1,
+        "hackernews": 1.1,
+        "youtube": 1.05,
+        "github_trending": 1.0,
         "metaso": 1.4,  # AI 深度答案
                 "perplexity": 1.35,  # AI 答案
         "perplexity_cite": 1.2,
@@ -424,7 +474,7 @@ class ResultMerger:
             if url_key:
                 seen_urls.add(url_key)
 
-            # 标题相似度去重（> 0.85 相似度视为重复）
+            # 标题相似度去重（> 0.90 相似度 + URL 同域视为重复）
             title_key = r.title.lower().strip()
             is_dup = False
             for existing in deduped:
@@ -433,15 +483,26 @@ class ResultMerger:
                     sim = SequenceMatcher(
                         None, title_key[:80], existing_title[:80]
                     ).ratio()
-                    if sim > 0.85:
-                        is_dup = True
-                        # 保留 relevance 更高的
-                        if r.relevance > existing.relevance:
-                            existing.title = r.title
-                            existing.snippet = r.snippet or existing.snippet
-                            existing.relevance = r.relevance
-                            if r.content:
-                                existing.content = r.content
+                    if sim > 0.90:
+                        # 同源同标题才去重，不同 URL 的不同视频保留
+                        if r.source == existing.source and url_key == cls._normalize_url(existing.url):
+                            is_dup = True
+                            if r.relevance > existing.relevance:
+                                existing.title = r.title
+                                existing.snippet = r.snippet or existing.snippet
+                                existing.relevance = r.relevance
+                                if r.content:
+                                    existing.content = r.content
+                        elif r.source != existing.source:
+                            # 不同源 + 高相似度 = 合并
+                            is_dup = True
+                            if r.relevance > existing.relevance:
+                                existing.title = r.title
+                                existing.snippet = r.snippet or existing.snippet
+                                existing.relevance = r.relevance
+                                if r.content:
+                                    existing.content = r.content
+                        # 同源不同URL（如YouTube不同视频）：不去重
                         break
             if is_dup:
                 continue
@@ -563,8 +624,16 @@ class ResultMerger:
             return ""
         try:
             parsed = urlparse(url)
-            # 去掉 trailing slash, www, query params, fragment
             key = f"{parsed.netloc.replace('www.', '')}{parsed.path.rstrip('/')}"
+            # Preserve critical query params (YouTube v=, GitHub params, etc.)
+            critical_params = ("v", "p", "id", "q", "repo", "issue", "pull")
+            if parsed.query:
+                from urllib.parse import parse_qs
+                qs = parse_qs(parsed.query)
+                kept = {k: v[0] for k, v in qs.items() if k in critical_params}
+                if kept:
+                    from urllib.parse import urlencode
+                    key += "?" + urlencode(kept)
             return key.lower()
         except Exception:
             return url.lower()
@@ -679,6 +748,28 @@ class SearchEngine:
                 query=request.query,
                 elapsed=round(time.time() - start, 3),
                 errors={"engine": "No matching modules found"},
+            )
+
+        # 过滤掉不可用的模块（避免浪费并发槽位）
+        available_selected = []
+        for name in selected:
+            module = self._modules[name]
+            module.reset_availability()
+            if await module.is_available():
+                available_selected.append(name)
+            else:
+                logger.debug(f"Module {name} not available, skipping")
+        selected = available_selected
+
+        if not selected:
+            return SearchResponse(
+                query=request.query,
+                elapsed=round(time.time() - start, 3),
+                results=[],
+                total=0,
+                sources_used=[],
+                errors={"engine": "All selected modules unavailable"},
+                metadata={"intent": intent, "engine_version": "v4"},
             )
 
         all_results: list[SearchResult] = []
@@ -853,9 +944,11 @@ class SearchEngine:
         try:
             # Reset cached availability so it re-checks
             module.reset_availability()
-            if not await module.is_available():
+            avail = await module.is_available()
+            if not avail:
                 return []
-            return await module.search(request)
+            results = await module.search(request)
+            return results
         except Exception:
             return []
 

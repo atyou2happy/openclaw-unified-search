@@ -38,6 +38,10 @@ _PRIORITY_ORDER = [
     "github",        # GitHub
     "pdf",           # PDF
     "docs",          # 文档
+    "reddit",        # Reddit 社区
+    "hackernews",   # Hacker News
+    "youtube",      # YouTube 视频
+    "github_trending", # GitHub Trending
     "academic",      # 学术
     "wiki",          # 百科
     "ddg",           # DuckDuckGo
