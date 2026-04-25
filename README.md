@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🔍 OpenClaw Unified Search</h1>
   <p align="center">
-    <b>Smart Unified Search Service — 26 Modules + 7 CDP AI Agents + Quality Relevance</b><br/>
+    <b>Smart Unified Search Service — 27 Modules + 7 CDP AI Agents + Browser Agent + Quality Relevance</b><br/>
     English | <a href="README_CN.md">中文</a>
   </p>
 </p>
@@ -17,7 +17,7 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 - 🔄 **Quality Fallback** — Auto-degrade from best to next-best AI agent on failure
 - 🔀 **RRF Fusion** — Reciprocal Rank Fusion for multi-source result merging
 - 🧠 **Smart Routing** — Intent detection + adaptive module count (3-8 based on query complexity)
-- 🧩 **26 Modules** — 7 CDP AI agents + 17 traditional + 2 new (Exa, StackOverflow)
+- 🧩 **27 Modules** — 7 CDP AI agents + 17 traditional + 3 new (Exa, StackOverflow, Agent Browser)
 - 🧠 **Smart Dedup** — URL dedup + title similarity + metadata merge
 - 💾 **LRU Cache** — Configurable TTL, avoids redundant searches
 - 🔌 **Zero-Barrier Extension** — Add new modules by implementing `BaseSearchModule`
@@ -105,6 +105,7 @@ US Service → CDP WebSocket → TabBitBrowser
 | `komo` | Komo | Fast AI search | None |
 | `stackoverflow` | StackExchange | Programming Q&A search | None |
 | `exa` | Exa.ai | AI-native semantic search | EXA_API_KEY |
+| `agent_browser` | Playwright CDP | Browser-based Google/Bing search (fallback) | Chrome CDP |
 
 ## 🚀 Quick Start
 
@@ -201,6 +202,7 @@ openclaw-unified-search/
 │       ├── searxng.py   # SearXNG aggregation
 │       ├── metaso.py    # Metaso AI
 │       ├── stackoverflow.py  # StackOverflow (v0.5.0)\n│       ├── exa.py            # Exa AI (v0.5.0)\n│       └── ...               # + 15 more modules
+│       ├── agent_browser.py  # Browser search (v0.5.1)
 ├── tests/
 ├── README.md
 ├── README_CN.md
@@ -218,6 +220,12 @@ openclaw-unified-search/
 
 
 ## 📋 Changelog
+
+### v0.5.1 (2026-04-25) — Agent Browser Module
+
+- 🌐 **Agent Browser**: Playwright CDP-based Google/Bing search as degraded fallback module
+- 📊 Quality comparison: agent_browser (16.8s, 0.78) vs web/SearXNG (4.4s, 0.80)
+- 🔧 Strategy: Low priority fallback, activated when SearXNG/DDG unavailable
 
 ### v0.5.0 (2026-04-25) — Search Quality Overhaul
 
