@@ -384,6 +384,10 @@ class QueryIntent:
                 score += 2.5
             if "knowledge" in types and name == "wiki":
                 score += 1.5
+            # 学术查询特殊加成
+            if "academic" in types and name in ("crossref", "dblp"):
+                score += 3.0
+
             # 质量加成
             score += profile["quality"] * 1.0
 
