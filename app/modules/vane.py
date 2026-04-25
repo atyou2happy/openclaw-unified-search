@@ -1,3 +1,4 @@
+import os
 """Vane (Perplexica) — 开源 AI 搜索引擎（34K⭐）.
 
 Vane（原名 Perplexica）是开源的 Perplexity 替代品，使用 SearXNG + LLM
@@ -11,10 +12,10 @@ API: POST http://localhost:3000/api/search
 import httpx
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
 
 
-VANE_URL = Config.get("VANE_URL", "http://localhost:3000")
+
+VANE_URL = os.environ.get("VANE_URL", "http://localhost:3000")
 
 
 class VaneModule(BaseSearchModule):

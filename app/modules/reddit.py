@@ -1,76 +1,86 @@
-"""Reddit search module — via SearXNG (curl subprocess to bypass httpx 403)."""
+"""Reddit — Reddit 社区搜索（免费，无需 API Key）.
 
-import logging
-import json
-import asyncio
-import subprocess
-from app.models import SearchRequest, SearchResult
+Reddit 的 JSON API 可以直接通过在 URL 后加 .json 获取搜索结果。
+无需 API Key，有速率限制但够用。
+
+API: https://www.reddit.com/search.json?q=...
+"""
+
+import httpx
 from app.modules.base import BaseSearchModule
-
-logger = logging.getLogger(__name__)
+from app.models import SearchRequest, SearchResult
+from app.config import Config
 
 
 class RedditModule(BaseSearchModule):
+    """Reddit 社区搜索 — 免费、无需 Key"""
+
     name = "reddit"
-    description = "Reddit 社区搜索（via SearXNG）"
+    description = "Reddit 社区搜索（免费，无需 API Key）"
 
     async def health_check(self) -> bool:
         try:
-            r = subprocess.run(
-                ["curl", "-s", "--noproxy", "localhost", "--max-time", "3",
-                 "http://localhost:8080/healthz"],
-                capture_output=True, text=True, timeout=5,
-            )
-            return r.returncode == 0
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(
+                    "https://www.reddit.com/.json",
+                    headers={"User-Agent": "UnifiedSearch/0.8.0"},
+                )
+                return resp.status_code == 200
         except Exception:
             return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        query = request.query.strip()
-        max_results = request.max_results
-        results = []
-
         try:
-            # Use curl subprocess — httpx gets 403 from SearXNG upstream
-            proc = await asyncio.create_subprocess_exec(
-                "curl", "-s", "--noproxy", "localhost", "--max-time", str(request.timeout),
-                "http://localhost:8080/search",
-                "--data-urlencode", f"q={query} site:reddit.com",
-                "--data-urlencode", "format=json",
-                "--data-urlencode", "categories=general",
-                "-G",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=request.timeout + 5)
-            data = json.loads(stdout)
+            async with httpx.AsyncClient(timeout=request.timeout) as client:
+                params = {
+                    "q": request.query,
+                    "limit": min(request.max_results, 10),
+                    "sort": "relevance",
+                    "type": "link",
+                }
 
-            for item in data.get("results", []):
-                url = item.get("url", "")
-                if "reddit.com" not in url:
+                resp = await client.get(
+                    "https://www.reddit.com/search.json",
+                    params=params,
+                    headers={"User-Agent": "UnifiedSearch/0.8.0 (research bot)"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            results = []
+            children = data.get("data", {}).get("children", [])
+
+            for child in children:
+                post = child.get("data", {})
+                title = post.get("title", "").strip()
+                url = f"https://www.reddit.com{post.get('permalink', '')}"
+                snippet = post.get("selftext", "")[:300].strip()
+                subreddit = post.get("subreddit", "")
+                score = post.get("score", 0)
+                num_comments = post.get("num_comments", 0)
+                author = post.get("author", "")
+
+                if not title:
                     continue
 
-                subreddit = ""
-                if "/r/" in url:
-                    parts = url.split("/r/")
-                    if len(parts) > 1:
-                        subreddit = parts[1].split("/")[0]
+                if not snippet:
+                    snippet = f"r/{subreddit} | ↑{score} | 💬{num_comments}"
 
                 results.append(SearchResult(
-                    title=item.get("title", ""),
+                    title=title,
                     url=url,
-                    snippet=item.get("content", "")[:300],
-                    source=self.name,
-                    relevance=0.7,
+                    snippet=snippet,
+                    source="reddit",
                     metadata={
-                        "engine": item.get("engine", ""),
                         "subreddit": subreddit,
-                    }
+                        "score": score,
+                        "comments": num_comments,
+                        "author": author,
+                        "type": "social",
+                    },
                 ))
-                if len(results) >= max_results:
-                    break
 
-        except Exception as e:
-            logger.error(f"Reddit search error: {e}")
+            return results
 
-        return results[:max_results]
+        except Exception:
+            return []

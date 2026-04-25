@@ -218,6 +218,18 @@ class QueryIntent:
             "speed": "slow",
             "quality": 0.95,
         },
+        "reddit": {
+            "types": {"social", "general", "discussion"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.82,
+        },
+        "devto": {
+            "types": {"code", "tutorial", "general"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.85,
+        },
     }
 
     # CDP AI Agent 降级链 — 按搜索质量排序
@@ -375,8 +387,12 @@ class QueryIntent:
                 score += 60.0
 
             # 代码查询特殊加成
-            if "code" in types and name in ("github", "stackoverflow"):
+            if "code" in types and name in ("github", "stackoverflow", "devto"):
                 score += 20.0
+
+            # 社交查询特殊加成
+            if "social" in types and name == "reddit":
+                score += 25.0
 
             # 新闻/实时查询加成
             if "fresh" in hints and name in ("searxng", "bing", "brave", "serper"):
