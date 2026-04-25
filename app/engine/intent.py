@@ -247,7 +247,7 @@ class QueryIntent:
         # 学术意图
         academic_keywords = [
             r"\b(paper|论文|arxiv|research|研究|实验|experiment|模型|model|训练|training)",
-            r"\b(算法|algorithm|神经网络|neural|transformer|attention|bert|gpt|llm)",
+            r"\b(算法|algorithm|神经网络|neural|transformer|attention|bert|gpt|llm|paper|论文|doi|citation)",
             r"\b(ieee|acm|doi|citation|引用|参考文献|bibliography)",
         ]
         if any(re.search(p, q) for p in academic_keywords):
@@ -379,6 +379,11 @@ class QueryIntent:
             if query_words <= 3 and name == 'wiki' and 'chinese' in hints:
                 score -= 1.0
 
+            # Wikipedia/百科 知识查询特殊加成
+            if "knowledge" in types and name == "wikipedia":
+                score += 2.5
+            if "knowledge" in types and name == "wiki":
+                score += 1.5
             # 质量加成
             score += profile["quality"] * 1.0
 
