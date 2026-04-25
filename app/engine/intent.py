@@ -343,7 +343,7 @@ class QueryIntent:
                 scores[name] = 999.0  # 最高优先级
                 continue
             if name in ("web", "ddg", "searxng"):
-                scores[name] = 500.0  # v0.5.0: 基础搜索始终入选
+                scores[name] = 50.0  # 基础搜索始终入选，但不压制专业模块
                 continue
 
             score = 0.0
@@ -364,9 +364,13 @@ class QueryIntent:
 
             # 特殊加成
             if "repo_format" in hints and name == "github":
-                score += 5.0
+                score += 60.0
             if "url_given" in hints and name == "jina":
-                score += 5.0
+                score += 60.0
+
+            # 代码查询特殊加成
+            if "code" in types and name in ("github", "stackoverflow"):
+                score += 20.0
 
             # 新闻/实时查询加成
             if "fresh" in hints and name in ("searxng", "bing", "brave", "serper"):
