@@ -1,10 +1,11 @@
-"""Web search module — TabBitBrowser 优先, DDG 备用."""
+"""Web search module — TabBitBrowser 优先, SearXNG 备用, DDG 兜底."""
 
 import asyncio
 import sys
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+import httpx
 
 
 def _proxy_client(**kwargs):
@@ -14,19 +15,16 @@ def _proxy_client(**kwargs):
     return httpx.AsyncClient(**kwargs)
 
 
-import httpx
-
-
 class WebSearchModule(BaseSearchModule):
     name = "web"
-    description = "智能网页搜索（TabBitBrowser 优先, DDG 备用）"
+    description = "智能网页搜索（TabBitBrowser 优先, SearXNG 备用, DDG 兜底）"
 
     def __init__(self):
         super().__init__()
         self._tabbit_available: bool | None = None
 
     async def health_check(self) -> bool:
-        return await self._check_tabbit() or await self._check_ddg()
+        return await self._check_tabbit() or await self._check_searxng()
 
     async def _check_tabbit(self) -> bool:
         try:
@@ -39,22 +37,32 @@ class WebSearchModule(BaseSearchModule):
             return False
 
     @staticmethod
-    async def _check_ddg() -> bool:
+    async def _check_searxng() -> bool:
         try:
-            from ddgs import DDGS
-            proxy = Config.get_proxy()
-            with DDGS(proxy=proxy) as d:
-                list(d.text("ping", max_results=1))
-            return True
+            async with httpx.AsyncClient(timeout=3, trust_env=False) as client:
+                resp = await client.get("http://localhost:8080/healthz")
+                return resp.status_code == 200
         except Exception:
-            return False
+            try:
+                async with httpx.AsyncClient(timeout=3, trust_env=False) as client:
+                    resp = await client.get("http://localhost:8080/", follow_redirects=True)
+                    return resp.status_code == 200
+            except Exception:
+                return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
+        # 策略1: TabBitBrowser（质量最高）
         if await self._check_tabbit():
             results = await self._search_tabbit(request)
             if results:
                 return results
 
+        # 策略2: SearXNG（稳定快速，247+ 引擎聚合）
+        results = await self._search_searxng(request)
+        if results:
+            return results
+
+        # 策略3: DDG 兜底（较慢，5s 超时）
         return await self._search_ddg(request)
 
     async def search_content(self, request: SearchRequest) -> list[SearchResult]:
@@ -114,25 +122,62 @@ class WebSearchModule(BaseSearchModule):
             return []
 
     @staticmethod
+    async def _search_searxng(request: SearchRequest) -> list[SearchResult]:
+        """SearXNG 聚合搜索（247+ 引擎，稳定快速）"""
+        try:
+            async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
+                language = "zh-CN" if request.language in ("zh", "auto") else "en-US"
+                resp = await client.get(
+                    "http://localhost:8080/search",
+                    params={
+                        "q": request.query,
+                        "format": "json",
+                        "language": language,
+                        "pageno": 1,
+                    },
+                )
+                if resp.status_code != 200:
+                    return []
+
+                data = resp.json()
+                results = []
+                for item in data.get("results", [])[:request.max_results]:
+                    results.append(SearchResult(
+                        title=item.get("title", "")[:200],
+                        url=item.get("url", ""),
+                        snippet=item.get("content", "")[:200],
+                        source="searxng",
+                        relevance=0.8,
+                    ))
+                return results
+        except Exception:
+            return []
+
+    @staticmethod
     async def _search_ddg(request: SearchRequest) -> list[SearchResult]:
+        """DDG 兜底（5s 超时限制）"""
         region = "cn-zh" if request.language in ("zh", "auto") else "us-en"
         try:
-            from ddgs import DDGS
-            proxy = Config.get_proxy()
-            results = []
-            with DDGS(proxy=proxy) as ddgs:
-                for r in ddgs.text(
-                    request.query,
-                    region=region,
-                    max_results=request.max_results,
-                ):
-                    results.append(SearchResult(
-                        title=r.get("title", ""),
-                        url=r.get("href", ""),
-                        snippet=r.get("body", ""),
-                        source="ddg",
-                        relevance=0.7,
-                    ))
+            results = await asyncio.wait_for(
+                asyncio.to_thread(WebSearchModule._ddgs_sync, request.query, region, request.max_results),
+                timeout=5,
+            )
             return results
         except Exception:
             return []
+
+    @staticmethod
+    def _ddgs_sync(query: str, region: str, max_results: int) -> list[SearchResult]:
+        from ddgs import DDGS
+        proxy = Config.get_proxy()
+        results = []
+        with DDGS(proxy=proxy) as ddgs:
+            for r in ddgs.text(query, region=region, max_results=max_results):
+                results.append(SearchResult(
+                    title=r.get("title", ""),
+                    url=r.get("href", ""),
+                    snippet=r.get("body", ""),
+                    source="ddg",
+                    relevance=0.7,
+                ))
+        return results

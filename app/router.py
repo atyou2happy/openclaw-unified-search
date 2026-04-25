@@ -5,6 +5,7 @@ from app.models import SearchRequest, SearchResponse, ModuleStatus
 from app.engine import engine
 from app.modules import get_all
 from app.cache import cache
+from app.version import __version__
 
 router = APIRouter()
 
@@ -12,16 +13,24 @@ router = APIRouter()
 @router.get("/health")
 async def health():
     """服务健康检查"""
+    from app.engine import avail_cache
     modules = get_all()
     available = 0
-    for m in modules.values():
+    for name, m in modules.items():
         try:
-            if await m.is_available():
+            cached = avail_cache.get(name)
+            if cached is True:
                 available += 1
+            elif cached is False:
+                pass
+            elif await m.is_available():
+                available += 1
+                avail_cache.set(name, True)
         except Exception:
             pass
     return {
         "status": "ok",
+        "version": __version__,
         "modules_total": len(modules),
         "modules_available": available,
     }
@@ -134,10 +143,12 @@ async def health_detailed():
             "description": m.description,
             "status": status,
             "available": healthy,
+            "error": getattr(m, "_last_error", None),
         }
     
     return {
         "status": "ok",
+        "version": __version__,
         "modules_total": len(modules),
         "modules_available": available,
         "cdp_reachable": cdp_reachable,
@@ -152,11 +163,13 @@ async def reload_modules():
     """
     from app.modules import auto_register, _registry
     from app.modules.cdp_pool import reset_cache
+    from app.engine import avail_cache
     
     # 清空旧注册
     old_count = len(_registry)
     _registry.clear()
     reset_cache()
+    avail_cache.invalidate()  # v0.4.0: 清除可用性缓存
     
     # 重新注册
     modules = auto_register()

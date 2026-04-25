@@ -24,6 +24,37 @@ from app.cache import cache
 
 
 # ============================================================
+# 可用性缓存 (v0.4.0) — 避免每次搜索都检查模块可用性
+# ============================================================
+
+
+class AvailabilityCache:
+    """模块可用性缓存 — TTL 60s，减少 is_available() 调用"""
+
+    def __init__(self, ttl: int = 60):
+        self._cache: dict[str, tuple[bool, float]] = {}
+        self._ttl = ttl
+
+    def get(self, module_name: str) -> bool | None:
+        if module_name in self._cache:
+            available, ts = self._cache[module_name]
+            if time.time() - ts < self._ttl:
+                return available
+        return None
+
+    def set(self, module_name: str, available: bool):
+        self._cache[module_name] = (available, time.time())
+
+    def invalidate(self, module_name: str = None):
+        if module_name:
+            self._cache.pop(module_name, None)
+        else:
+            self._cache.clear()
+
+
+avail_cache = AvailabilityCache()
+
+# ============================================================
 # 意图识别
 # ============================================================
 
@@ -40,7 +71,7 @@ class QueryIntent:
             "quality": 0.75,
         },
         "hackernews": {
-            "types": {"general", "tech", "code", "trend"},
+            "types": {"tech", "code", "trend"},  # v0.5.0: 只在技术相关查询触发
             "langs": {"en"},
             "speed": "fast",
             "quality": 0.80,
@@ -158,6 +189,18 @@ class QueryIntent:
             "langs": {"en"},
             "speed": "medium",
             "quality": 0.85,
+        },
+        "stackoverflow": {
+            "types": {"code", "tech"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.90,  # 编程问题精准
+        },
+        "exa": {
+            "types": {"general", "research", "knowledge"},
+            "langs": {"en", "zh"},
+            "speed": "medium",
+            "quality": 0.92,  # AI 语义搜索高质量
         },
         "komo": {
             "types": {"general", "research"},
@@ -333,9 +376,12 @@ class QueryIntent:
             if name not in available:
                 continue
 
-            # ⭐ tabbit 始终选中
+            # ⭐ tabbit + web + ddg 始终选中（v0.5.0: 保证基础搜索覆盖）
             if name == "tabbit":
                 scores[name] = 999.0  # 最高优先级
+                continue
+            if name in ("web", "ddg", "searxng"):
+                scores[name] = 500.0  # v0.5.0: 基础搜索始终入选
                 continue
 
             score = 0.0
@@ -587,10 +633,31 @@ class ResultMerger:
         return results
 
     @classmethod
-    def rerank(cls, results: list[SearchResult]) -> list[SearchResult]:
-        """质量重排（兼容旧接口，新代码用 rrf_fuse）"""
+    def rerank(cls, results: list[SearchResult], query: str = "") -> list[SearchResult]:
+        """质量重排 — v0.5.0: 加入标题-查询相似度计算"""
+        query_lower = query.lower().strip()
+        query_words = set(query_lower.split())
+
         for r in results:
             score = r.relevance
+
+            # v0.5.0: 标题-查询相似度（核心改进）
+            if query_lower and r.title:
+                title_lower = r.title.lower()
+                # 关键词命中
+                hit_count = sum(1 for w in query_words if w in title_lower)
+                keyword_score = hit_count / max(len(query_words), 1)
+                # SequenceMatcher 相似度
+                seq_score = SequenceMatcher(None, query_lower[:60], title_lower[:60]).ratio()
+                # 综合：关键词命中权重更高
+                relevance_boost = keyword_score * 0.5 + seq_score * 0.3
+                score = max(score, relevance_boost)  # 取较大值，不降低
+
+            # v0.5.0: snippet 中查询词命中
+            if query_lower and r.snippet:
+                snippet_lower = r.snippet.lower()
+                snippet_hits = sum(1 for w in query_words if w in snippet_lower)
+                score += min(snippet_hits / max(len(query_words), 1), 1.0) * 0.2
 
             # 模块权重
             source = (
@@ -669,7 +736,7 @@ class SearchEngine:
         如果用户指定了 sources，则从 chain 中筛选匹配的模块。
         """
         start = time.time()
-        timeout = request.timeout or 120
+        timeout = request.timeout or 30  # v0.4.0: lowered from 120
 
         # Determine which CDP modules to try
         if request.sources:
@@ -750,15 +817,31 @@ class SearchEngine:
                 errors={"engine": "No matching modules found"},
             )
 
-        # 过滤掉不可用的模块（避免浪费并发槽位）
+        # 过滤掉不可用的模块（v0.4.0: 用缓存避免串行检查）
         available_selected = []
+        check_tasks = {}
         for name in selected:
-            module = self._modules[name]
-            module.reset_availability()
-            if await module.is_available():
+            cached = avail_cache.get(name)
+            if cached is True:
                 available_selected.append(name)
+            elif cached is False:
+                logger.debug(f"Module {name} not available (cached), skipping")
             else:
-                logger.debug(f"Module {name} not available, skipping")
+                # 未缓存，需要检查
+                module = self._modules[name]
+                module.reset_availability()
+                check_tasks[name] = module.is_available()
+
+        if check_tasks:
+            results = await asyncio.gather(*check_tasks.values(), return_exceptions=True)
+            for (name, _), result in zip(check_tasks.items(), results):
+                avail = result if isinstance(result, bool) else False
+                avail_cache.set(name, avail)
+                if avail:
+                    available_selected.append(name)
+                else:
+                    logger.debug(f"Module {name} not available, skipping")
+
         selected = available_selected
 
         if not selected:
@@ -788,7 +871,7 @@ class SearchEngine:
 
         # Phase 2: 等待结果 — 用 FIRST_COMPLETED 逐个收集
         min_results = max(3, request.max_results // 2)
-        phase1_timeout = min(request.timeout * 0.6, 45)  # 快阶段超时
+        phase1_timeout = min(request.timeout * 0.5, 15)  # v0.4.0: 快阶段 15s 上限
         phase1_start = time.time()
 
         pending = set(tasks.values())
@@ -842,7 +925,7 @@ class SearchEngine:
             for task in remaining_tasks:
                 task.cancel()
         else:
-            phase2_timeout = max(3, request.timeout * 0.4)
+            phase2_timeout = max(3, request.timeout * 0.5)  # v0.4.0: 余量阶段
             if remaining_tasks:
                 try:
                     done2, still_pending = await asyncio.wait(
@@ -871,9 +954,9 @@ class SearchEngine:
         if len(results_by_source) > 1:
             all_results = ResultMerger.rrf_fuse(results_by_source)
         else:
-            # 单源 — 用传统去重 + 重排
+            # 单源 — 用传统去重 + 重排（v0.5.0: 传入查询词）
             all_results = ResultMerger.deduplicate(all_results)
-            all_results = ResultMerger.rerank(all_results)
+            all_results = ResultMerger.rerank(all_results, query=request.query)
 
         # 5. Tabbit 结果置顶（如果有）
         tabbit_results = [r for r in all_results if r.source == "tabbit"]
@@ -900,6 +983,7 @@ class SearchEngine:
                     "hints": list(intent["hints"]),
                 },
                 "engine_version": "v4",
+                "search_version": "0.5.0",
                 "phase1_modules": list(completed_names),
             },
         )

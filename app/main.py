@@ -4,6 +4,7 @@ import asyncio
 from fastapi import FastAPI
 from app.config import Config
 from app.router import router
+from app.version import __version__
 from app.engine import engine
 from app.modules import auto_register
 
@@ -11,7 +12,7 @@ from app.modules import auto_register
 app = FastAPI(
     title="Unified Search",
     description="统一搜索服务 — 全面、准确、最新、高质量的信息获取",
-    version="0.3.0",
+    version=__version__,
 )
 
 # Include routes
@@ -40,7 +41,7 @@ async def startup():
         available.append(f"  {status} {m.name}: {m.description}")
     
     ok_count = sum(1 for _, ok in results if ok)
-    print(f"[unified-search] Loaded {len(modules)} modules ({ok_count} available):")
+    print(f"[unified-search v{__version__}] Loaded {len(modules)} modules ({ok_count} available):")
     for line in available:
         print(line)
 

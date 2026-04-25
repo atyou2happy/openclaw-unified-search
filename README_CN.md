@@ -21,6 +21,8 @@
 - 🧠 **智能去重** — URL 去重 + 标题相似度 + 元数据合并
 - 💾 **LRU 缓存** — 可配置 TTL，避免重复搜索
 - 🔌 **零门槛扩展** — 实现 `BaseSearchModule` 即可添加新模块
+- 🎯 **智能相关性评分 (v0.5.0)** — SequenceMatcher + 关键词命中，不再使用固定 relevance
+- 🛡️ **基础搜索保底 (v0.5.0)** — web + ddg + searxng 始终入选，保证搜索覆盖
 
 ## 🔄 质量降级策略
 
@@ -172,7 +174,7 @@ export SERPER_API_KEY="xxx"
 export PERPLEXITY_API_KEY="xxx"
 export BING_API_KEY="xxx"
 export YOU_API_KEY="xxx"
-export GITHUB_TOKEN="xxx"
+export GITHUB_TOKEN="xxx"\nexport EXA_API_KEY="xxx"
 ```
 
 ## 📁 项目结构

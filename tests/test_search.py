@@ -92,7 +92,7 @@ async def test_module_not_found(setup_engine):
 
 @pytest.mark.asyncio
 async def test_cache(setup_engine):
-    """Second search should be cached."""
+    """Second search should be cached (only if first returned results)."""
     from app.cache import cache
 
     cache.clear()
@@ -101,10 +101,33 @@ async def test_cache(setup_engine):
         query="FastCode GitHub repo", sources=["github"], max_results=3, timeout=15
     )
     resp1 = await engine.search(req)
-    assert not resp1.cached
 
-    resp2 = await engine.search(req)
-    assert resp2.cached
+    if resp1.results:
+        # 有结果时，第二次应该是缓存
+        resp2 = await engine.search(req)
+        assert resp2.cached
+    else:
+        # 空结果不缓存 (v0.4.0 bugfix) — 第二次也不是缓存
+        resp2 = await engine.search(req)
+        assert not resp2.cached  # 空结果不应被缓存
+
+
+@pytest.mark.asyncio
+async def test_cache_empty_not_cached(setup_engine):
+    """v0.4.0: Empty results should NOT be cached."""
+    from app.cache import cache
+    from app.models import SearchResponse
+
+    cache.clear()
+
+    # 直接往缓存放空结果
+    req = SearchRequest(query="nonexistent_xyz_12345", sources=["github"], max_results=3)
+    resp = SearchResponse(query="nonexistent_xyz_12345", results=[], total=0)
+    cache.put(req, resp)
+
+    # 空结果不应被缓存
+    cached = cache.get(req)
+    assert cached is None  # 空结果不应缓存
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,9 @@ class SearchCache:
             return response.model_copy()
 
     def put(self, request: SearchRequest, response: SearchResponse) -> None:
-        """Store response in cache."""
+        """Store response in cache. Empty results are NOT cached (v0.4.0 bugfix)."""
+        if not response.results:
+            return  # v0.4.0: 空结果不缓存，避免后续查询返回空
         key = self._make_key(request)
         with self._lock:
             # Evict oldest if at capacity

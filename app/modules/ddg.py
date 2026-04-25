@@ -6,6 +6,9 @@ from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
 
+# DDG 网络较慢（经代理绕路），设置独立超时上限避免拖慢整体
+DDG_TIMEOUT = 5
+
 
 class DuckDuckGoModule(BaseSearchModule):
     """DuckDuckGo 搜索 — 免费，无需 API Key"""
@@ -18,12 +21,13 @@ class DuckDuckGoModule(BaseSearchModule):
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         proxy = Config.get_proxy()
+        timeout = min(request.timeout, DDG_TIMEOUT)
 
         # 策略1: ddgs 库（最可靠）
         try:
             results = await asyncio.wait_for(
                 asyncio.to_thread(self._ddgs_search, request.query, request.max_results, proxy),
-                timeout=request.timeout,
+                timeout=timeout,
             )
             if results:
                 return results
@@ -32,7 +36,7 @@ class DuckDuckGoModule(BaseSearchModule):
 
         # 策略2: httpx HTML 抓取
         try:
-            kwargs = {"timeout": min(request.timeout, 15)}
+            kwargs = {"timeout": timeout}
             if proxy:
                 kwargs["proxy"] = proxy
             async with httpx.AsyncClient(**kwargs) as client:

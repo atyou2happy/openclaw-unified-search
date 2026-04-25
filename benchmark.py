@@ -81,7 +81,7 @@ def score_result(result: dict, test: dict) -> float:
     total_keywords = len(test["expect_keywords"])
     
     for r in results[:3]:
-        text = (r.get("title", "") + " " + r.get("snippet", "") + " " + r.get("content", "")).lower()
+        text = (r.get("title") or "" + " " + r.get("snippet") or "" + " " + r.get("content") or "").lower()
         for kw in test["expect_keywords"]:
             if kw.lower() in text:
                 hits += 1

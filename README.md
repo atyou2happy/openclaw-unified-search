@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🔍 OpenClaw Unified Search</h1>
   <p align="center">
-    <b>Smart Unified Search Service — 24 Modules + 7 CDP AI Agents + Quality Fallback</b><br/>
+    <b>Smart Unified Search Service — 26 Modules + 7 CDP AI Agents + Quality Relevance</b><br/>
     English | <a href="README_CN.md">中文</a>
   </p>
 </p>
@@ -17,10 +17,12 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 - 🔄 **Quality Fallback** — Auto-degrade from best to next-best AI agent on failure
 - 🔀 **RRF Fusion** — Reciprocal Rank Fusion for multi-source result merging
 - 🧠 **Smart Routing** — Intent detection + adaptive module count (3-8 based on query complexity)
-- 🧩 **24 Modules** — 7 CDP AI agents + 17 traditional search modules
+- 🧩 **26 Modules** — 7 CDP AI agents + 17 traditional + 2 new (Exa, StackOverflow)
 - 🧠 **Smart Dedup** — URL dedup + title similarity + metadata merge
 - 💾 **LRU Cache** — Configurable TTL, avoids redundant searches
 - 🔌 **Zero-Barrier Extension** — Add new modules by implementing `BaseSearchModule`
+- 🎯 **Smart Relevance (v0.5.0)** — SequenceMatcher + keyword hit scoring, no more fixed relevance
+- 🛡️ **Always-Cover (v0.5.0)** — web + ddg + searxng always selected for base coverage
 
 ## 🔄 Quality Fallback
 
@@ -101,6 +103,8 @@ US Service → CDP WebSocket → TabBitBrowser
 | `bing` | Bing Search | Microsoft search | BING_API_KEY |
 | `you` | You.com | AI-enhanced search | YOU_API_KEY |
 | `komo` | Komo | Fast AI search | None |
+| `stackoverflow` | StackExchange | Programming Q&A search | None |
+| `exa` | Exa.ai | AI-native semantic search | EXA_API_KEY |
 
 ## 🚀 Quick Start
 
@@ -172,7 +176,7 @@ export SERPER_API_KEY="xxx"
 export PERPLEXITY_API_KEY="xxx"
 export BING_API_KEY="xxx"
 export YOU_API_KEY="xxx"
-export GITHUB_TOKEN="xxx"
+export GITHUB_TOKEN="xxx"\nexport EXA_API_KEY="xxx"
 ```
 
 ## 📁 Project Structure
@@ -196,7 +200,7 @@ openclaw-unified-search/
 │       ├── qwen.py      # Qwen CDP
 │       ├── searxng.py   # SearXNG aggregation
 │       ├── metaso.py    # Metaso AI
-│       └── ...          # + 14 more modules
+│       ├── stackoverflow.py  # StackOverflow (v0.5.0)\n│       ├── exa.py            # Exa AI (v0.5.0)\n│       └── ...               # + 15 more modules
 ├── tests/
 ├── README.md
 ├── README_CN.md
@@ -211,7 +215,30 @@ openclaw-unified-search/
 - **Reciprocal Rank Fusion** — Multi-source result merging
 - **websockets** — CDP communication with message ID filtering
 
-## 📄 License
+
+
+## 📋 Changelog
+
+### v0.5.0 (2026-04-25) — Search Quality Overhaul
+
+- 🎯 **Smart Relevance**: Real relevance scoring using SequenceMatcher + keyword hit + snippet matching (no more fixed values)
+- 🛡️ **Always-Cover**: web + ddg + searxng hardcoded to always be selected (base search coverage guaranteed)
+- 🔒 **Smart Trigger**: github_trending and hackernews only activate for relevant queries (no more irrelevant trending results)
+- 🆕 **Exa Module**: AI-native semantic search (exa.ai, free 1000/month)
+- 🆕 **StackOverflow Module**: Programming Q&A search via StackExchange API (free, no key)
+- 🐛 **Bug Fix**: Process stability — `setsid` daemon survives exec timeouts
+
+### v0.4.0 (2026-04-25)
+
+- ⚡ Performance: empty results not cached, module error messages returned
+- 📊 Version field in health endpoint
+- 💾 Available modules cached for performance
+
+### v0.2.1 (2026-04-12)
+
+- 🎉 Initial public release
+- 6 core modules, 10 tests all passing
+\n## 📄 License
 
 MIT
 
