@@ -1,6 +1,6 @@
 [project]
 name = "unified-search"
-version = "0.9.2"
+version = "0.9.3"
 description = "Unified search API for OpenClaw - comprehensive, accurate, and up-to-date information retrieval"
 readme = "README.md"
 license = {text = "MIT"}

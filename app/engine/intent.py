@@ -394,6 +394,10 @@ class QueryIntent:
             if "social" in types and name == "reddit":
                 score += 25.0
 
+            # 趋势查询特殊加成
+            if "trend" in types and name in ("hackernews", "github_trending"):
+                score += 30.0  # 趋势查询必须包含这些专业模块
+
             # 新闻/实时查询加成
             if "fresh" in hints and name in ("searxng", "bing", "brave", "serper"):
                 score += 2.0
@@ -431,6 +435,8 @@ class QueryIntent:
         max_modules = 5  # 默认
         if "research" in hints or "academic" in types:
             max_modules = 7
+        elif "trend" in types:
+            max_modules = 7  # 趋势查询需要 HN + GitHub Trending
         elif "code" in types:
             max_modules = 5
         elif types == {"general"}:
