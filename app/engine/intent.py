@@ -212,6 +212,12 @@ class QueryIntent:
             "speed": "fast",
             "quality": 0.90,
         },
+        "vane": {
+            "types": {"general", "research", "knowledge", "academic"},
+            "langs": {"en", "zh"},
+            "speed": "slow",
+            "quality": 0.95,
+        },
     }
 
     # CDP AI Agent 降级链 — 按搜索质量排序
