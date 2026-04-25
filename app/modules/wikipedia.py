@@ -10,7 +10,6 @@ API: https://{en,zh}.wikipedia.org/w/api.php
 import httpx
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
 
 
 class WikipediaModule(BaseSearchModule):
@@ -23,10 +22,7 @@ class WikipediaModule(BaseSearchModule):
         return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": request.timeout}
-        if proxy:
-            kwargs["proxy"] = proxy
+        kwargs = {"timeout": request.timeout}  # Wikipedia 不走代理（直连才行）
 
         # 根据语言选择 wiki
         has_chinese = any("\u4e00" <= c <= "\u9fff" for c in request.query)

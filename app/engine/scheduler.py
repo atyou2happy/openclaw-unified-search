@@ -220,7 +220,7 @@ class SearchEngine:
             for task in remaining_tasks:
                 task.cancel()
         else:
-            phase2_timeout = max(3, request.timeout * 0.5)  # v0.4.0: 余量阶段
+            phase2_timeout = max(5, request.timeout * 0.5)  # v0.4.0: 余量阶段
             if remaining_tasks:
                 try:
                     done2, still_pending = await asyncio.wait(
