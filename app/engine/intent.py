@@ -194,6 +194,24 @@ class QueryIntent:
             "speed": "medium",
             "quality": 0.85,
         },
+        "crossref": {
+            "types": {"academic", "research", "paper"},
+            "langs": {"en"},
+            "speed": "medium",
+            "quality": 0.85,
+        },
+        "dblp": {
+            "types": {"academic", "research", "paper"},
+            "langs": {"en"},
+            "speed": "fast",
+            "quality": 0.88,
+        },
+        "wikipedia": {
+            "types": {"knowledge", "general", "research"},
+            "langs": {"en", "zh"},
+            "speed": "fast",
+            "quality": 0.90,
+        },
     }
 
     # CDP AI Agent 降级链 — 按搜索质量排序
