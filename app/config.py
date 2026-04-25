@@ -1,10 +1,31 @@
-"""Configuration management."""
+"""Configuration management — env vars override defaults."""
 
+import os
 from pathlib import Path
 
 
+def _env(key: str, default: str | None = None) -> str | None:
+    """Read env var, stripping whitespace."""
+    val = os.environ.get(key)
+    return val.strip() if val else default
+
+
+def _env_int(key: str, default: int) -> int:
+    """Read env var as int."""
+    val = _env(key)
+    return int(val) if val else default
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    """Read env var as bool (1/true/yes = True)."""
+    val = _env(key)
+    if val is None:
+        return default
+    return val.lower() in ("1", "true", "yes")
+
+
 class Config:
-    """Application configuration with sensible defaults."""
+    """Application configuration — env vars override class defaults."""
 
     # Server
     HOST: str = "127.0.0.1"
@@ -21,19 +42,18 @@ class Config:
     MAX_CONCURRENT_MODULES: int = 10
 
     # Proxy (for WSL / restricted networks)
-    # Set HTTP_PROXY / HTTPS_PROXY env vars, or configure here
-    PROXY_URL: str | None = "http://127.0.0.1:21882"  # WestWorld proxy for external access
+    PROXY_URL: str | None = "http://127.0.0.1:21882"
 
     # TabBitBrowser
     TABBIT_CDP_PORT: int = 9222
     TABBIT_TIMEOUT: int = 120
     TABBIT_SCRIPT_PATH: str = str(
-        Path(__file__).parent.parent.parent.parent /
-        "claw-mem" / "tools" / "tabbit_cdp_search.py"
+        Path(__file__).parent.parent.parent.parent
+        / "claw-mem" / "tools" / "tabbit_cdp_search.py"
     )
 
     # GitHub
-    GITHUB_TOKEN: str | None = None  # From env var GITHUB_TOKEN
+    GITHUB_TOKEN: str | None = None
 
     # PDF
     PDF_MAX_SIZE_MB: int = 50
@@ -47,12 +67,11 @@ class Config:
 
     @classmethod
     def get_proxy(cls) -> str | None:
-        """Get proxy URL from config or env"""
-        import os
+        """Get proxy URL — env vars take precedence over class default."""
         return (
-            cls.PROXY_URL
-            or os.environ.get("HTTPS_PROXY")
-            or os.environ.get("HTTP_PROXY")
-            or os.environ.get("https_proxy")
-            or os.environ.get("http_proxy")
+            _env("HTTPS_PROXY")
+            or _env("HTTP_PROXY")
+            or _env("https_proxy")
+            or _env("http_proxy")
+            or cls.PROXY_URL
         )

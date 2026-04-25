@@ -1,6 +1,7 @@
 """Unified Search API — 统一搜索服务 for OpenClaw."""
 
 import asyncio
+import logging
 from fastapi import FastAPI
 from app.config import Config
 from app.router import router
@@ -8,6 +9,13 @@ from app.version import __version__
 from app.engine import engine
 from app.modules import auto_register
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG if Config.DEBUG else logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("unified-search")
 
 app = FastAPI(
     title="Unified Search",
@@ -15,7 +23,6 @@ app = FastAPI(
     version=__version__,
 )
 
-# Include routes
 app.include_router(router)
 
 
@@ -24,26 +31,24 @@ async def startup():
     """Load and register all search modules on startup (parallel health check)."""
     modules = auto_register()
     engine.load_modules()
-    
-    # Parallel health check — all modules at once
+
     async def check(m):
         try:
             ok = await asyncio.wait_for(m.is_available(), timeout=3.0)
         except (asyncio.TimeoutError, Exception):
             ok = False
         return m, ok
-    
+
     results = await asyncio.gather(*[check(m) for m in modules])
-    
-    available = []
-    for m, ok in results:
-        status = "✅" if ok else "❌"
-        available.append(f"  {status} {m.name}: {m.description}")
-    
+
     ok_count = sum(1 for _, ok in results if ok)
-    print(f"[unified-search v{__version__}] Loaded {len(modules)} modules ({ok_count} available):")
-    for line in available:
-        print(line)
+    logger.info(
+        "v%s loaded %d modules (%d available)",
+        __version__, len(modules), ok_count,
+    )
+    for m, ok in results:
+        level = logging.INFO if ok else logging.WARNING
+        logger.log(level, "  %s %s: %s", "✅" if ok else "❌", m.name, m.description)
 
 
 if __name__ == "__main__":
