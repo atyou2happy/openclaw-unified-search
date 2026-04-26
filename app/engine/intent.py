@@ -237,6 +237,7 @@ class QueryIntent:
     CDP_FALLBACK_CHAIN = [
         "tabbit",
         "deepseek",
+        "scnet",
         "gemini",
         "grok",
         "kimi",

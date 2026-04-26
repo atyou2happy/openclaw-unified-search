@@ -49,7 +49,7 @@ _PRIORITY_ORDER = [
     "exa",           # Exa AI 语义搜索
     "agent_browser", # AI Agent 浏览器搜索（降级备选，质量待评估）
     # CDP 模块（按降级链顺序）
-    "deepseek", "gemini", "grok", "kimi", "glm", "qwen",
+    "deepseek", "gemini", "grok", "kimi", "glm", "qwen", "scnet",
     # API 模块（需 key）
     "brave", "tavily", "serper", "perplexity", "bing", "you", "komo",
 ]

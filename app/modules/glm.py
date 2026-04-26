@@ -1,4 +1,9 @@
-"""GLM AI 搜索（CDP） — 使用 cdp_pool 统一连接管理"""
+"""GLM AI 搜索（CDP） — 使用 cdp_pool 统一连接管理
+默认开启: 深度思考 + 联网搜索
+
+GLM-5.1 深度思考: button.thinking-status (class含enabled=已开启, name=disabled=可关闭)
+联网搜索: li.tool-list-item[data-sensors-click] name="tools_web_search"
+"""
 
 import asyncio
 import logging
@@ -13,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class GlmModule(BaseSearchModule):
     name = "glm"
-    description = "GLM AI 搜索（CDP）"
+    description = "GLM AI 搜索（CDP，深度思考+联网搜索）"
     URL = "https://www.bigmodel.cn/trialcenter/modeltrial/text?modelCode=glm-5.1"
     TEXTAREA_SELECTOR = "textarea.el-textarea__inner"
     MARKDOWN_SELECTOR = '[class*="markdown"]'
@@ -24,8 +29,6 @@ class GlmModule(BaseSearchModule):
         self._is_available = None
 
     async def health_check(self) -> bool:
-        # Lazy check: always return True at startup, 
-        # actual CDP availability checked at search time
         return True
 
     def reset_availability(self):
@@ -55,6 +58,62 @@ class GlmModule(BaseSearchModule):
                 "type": evt_type, "key": "Enter",
                 "code": "Enter", "windowsVirtualKeyCode": 13
             }, timeout=5)
+
+    async def _enable_features(self, ws_url):
+        """开启深度思考 + 联网搜索
+
+        深度思考: button.thinking-status — 如果不含'enabled'类则需要点击开启
+        联网搜索: 需要先展开工具面板，再点击联网搜索的 li 项
+        """
+        # 1. 深度思考
+        r = await cdp_send_command(ws_url, "Runtime.evaluate", {
+            "expression": (
+                "(() => {"
+                "const btn = document.querySelector('.thinking-status');"
+                "if (btn && !btn.classList.contains('enabled')) {"
+                "btn.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));"
+                "return 'clicked';"
+                "}"
+                "return btn ? 'already_enabled' : 'not_found';"
+                "})()"
+            )
+        }, timeout=10)
+
+        # 2. 联网搜索 — 点击 tools-setting 区域触发 popover，再点击"联网搜索"选项
+        # 先点击工具区域展开
+        await cdp_send_command(ws_url, "Runtime.evaluate", {
+            "expression": (
+                "(() => {"
+                "const toolArea = document.querySelector('.tools-setting');"
+                "if (toolArea) {"
+                "toolArea.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));"
+                "return 'opened';"
+                "}"
+                "return 'not_found';"
+                "})()"
+            )
+        }, timeout=10)
+        await asyncio.sleep(0.8)
+
+        # 点击联网搜索列表项
+        await cdp_send_command(ws_url, "Runtime.evaluate", {
+            "expression": (
+                "(() => {"
+                "const items = document.querySelectorAll('.tool-list-item');"
+                "for (const item of items) {"
+                "const name = item.getAttribute('name');"
+                "if (name === 'tools_web_search') {"
+                "item.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));"
+                "return 'clicked';"
+                "}"
+                "}"
+                "return 'not_found';"
+                "})()"
+            )
+        }, timeout=10)
+        await asyncio.sleep(0.5)
+
+        logger.info("GLM: 深度思考+联网搜索已开启")
 
     async def _wait_for_response(self, ws_url, timeout=60, check_interval=3):
         last_text = ""
@@ -95,6 +154,10 @@ class GlmModule(BaseSearchModule):
             await asyncio.sleep(8)
             if not await self._wait_for_selector(tab_ws_url, self.TEXTAREA_SELECTOR):
                 return []
+
+            # 开启深度思考 + 联网搜索
+            await self._enable_features(tab_ws_url)
+
             await cdp_send_command(tab_ws_url, "Runtime.evaluate", {
                 "expression": 'document.querySelector("' + self.TEXTAREA_SELECTOR + '").focus();"focused"'
             }, timeout=5)

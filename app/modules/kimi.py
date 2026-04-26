@@ -1,4 +1,6 @@
-"""Kimi AI 搜索（CDP） — 使用 cdp_pool 统一连接管理"""
+"""Kimi AI 搜索（CDP） — 使用 cdp_pool 统一连接管理
+默认开启: 深度研究
+"""
 
 import asyncio
 import logging
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class KimiModule(BaseSearchModule):
     name = "kimi"
-    description = "Kimi AI 搜索（CDP）"
+    description = "Kimi AI 搜索（CDP，深度研究）"
     URL = "https://www.kimi.com/"
     TEXTAREA_SELECTOR = "textarea"
     MARKDOWN_SELECTOR = '[class*="markdown"]'
@@ -24,8 +26,6 @@ class KimiModule(BaseSearchModule):
         self._is_available = None
 
     async def health_check(self) -> bool:
-        # Lazy check: always return True at startup, 
-        # actual CDP availability checked at search time
         return True
 
     def reset_availability(self):
@@ -55,6 +55,24 @@ class KimiModule(BaseSearchModule):
                 "type": evt_type, "key": "Enter",
                 "code": "Enter", "windowsVirtualKeyCode": 13
             }, timeout=5)
+
+    async def _enable_features(self, ws_url):
+        """开启深度研究"""
+        await cdp_send_command(ws_url, "Runtime.evaluate", {
+            "expression": (
+                "(() => {"
+                "const labels = document.querySelectorAll('.agent-label');"
+                "for (const l of labels) {"
+                "if (l.textContent.trim().includes('深度研究')) {"
+                "l.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));"
+                "return 'clicked';"
+                "}}"
+                "return 'not_found';"
+                "})()"
+            )
+        }, timeout=10)
+        await asyncio.sleep(0.5)
+        logger.info("Kimi: 深度研究已开启")
 
     async def _wait_for_response(self, ws_url, timeout=60, check_interval=3):
         last_text = ""
@@ -95,6 +113,10 @@ class KimiModule(BaseSearchModule):
             await asyncio.sleep(8)
             if not await self._wait_for_selector(tab_ws_url, self.TEXTAREA_SELECTOR):
                 return []
+
+            # 开启深度研究
+            await self._enable_features(tab_ws_url)
+
             await cdp_send_command(tab_ws_url, "Runtime.evaluate", {
                 "expression": 'document.querySelector("' + self.TEXTAREA_SELECTOR + '").focus();"focused"'
             }, timeout=5)

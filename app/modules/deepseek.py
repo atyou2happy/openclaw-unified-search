@@ -1,4 +1,6 @@
-"""DeepSeek AI CDP module — 使用 cdp_pool 统一连接管理"""
+"""DeepSeek AI CDP module — 使用 cdp_pool 统一连接管理
+默认开启: 深度思考 + 智能搜索
+"""
 
 import asyncio
 import json
@@ -12,10 +14,13 @@ from app.modules.cdp_pool import (
 
 logger = logging.getLogger(__name__)
 
+# DeepSeek 按钮选择器
+_TOGGLE_SEL = ".ds-toggle-button"
+
 
 class DeepseekModule(BaseSearchModule):
     name = "deepseek"
-    description = "DeepSeek AI 搜索（CDP）"
+    description = "DeepSeek AI 搜索（CDP，深度思考+智能搜索）"
     MARKDOWN_SELECTOR = '[class*="markdown"]'
     THINKING_PREFIX = "嗯"
     TEXTAREA_SELECTOR = 'textarea'
@@ -26,8 +31,6 @@ class DeepseekModule(BaseSearchModule):
         self._cdp_port = 9222
 
     async def health_check(self) -> bool:
-        # Lazy check: always return True at startup, 
-        # actual CDP availability checked at search time
         return True
 
     def reset_availability(self):
@@ -94,6 +97,26 @@ class DeepseekModule(BaseSearchModule):
 
         return last_text
 
+    async def _enable_features(self, ws_url: str):
+        """开启深度思考 + 智能搜索"""
+        for label in ("深度思考", "智能搜索"):
+            await cdp_send_command(ws_url, "Runtime.evaluate", {
+                "expression": (
+                    f"(() => {{"
+                    f"const btns = document.querySelectorAll('{_TOGGLE_SEL}');"
+                    f"for (const b of btns) {{"
+                    f"if (b.textContent.trim().includes('{label}') && !b.classList.contains('active')) {{"
+                    f"b.dispatchEvent(new MouseEvent('click', {{bubbles: true, cancelable: true}}));"
+                    f"return 'clicked';"
+                    f"}}"
+                    f"}}"
+                    f"return 'already';"
+                    f"}})()"
+                )
+            }, timeout=10)
+            await asyncio.sleep(0.5)
+        logger.info("DeepSeek: 深度思考+智能搜索已开启")
+
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         tab_id = None
 
@@ -111,17 +134,20 @@ class DeepseekModule(BaseSearchModule):
             if not await self._wait_for_selector(tab_ws_url, self.TEXTAREA_SELECTOR):
                 return []
 
-            # 4. Focus and type
+            # 4. 开启深度思考 + 智能搜索
+            await self._enable_features(tab_ws_url)
+
+            # 5. Focus and type
             await cdp_send_command(tab_ws_url, "Runtime.evaluate", {
                 "expression": f'document.querySelector("{self.TEXTAREA_SELECTOR}").focus();"focused"'
             }, timeout=5)
 
             await self._type_text(tab_ws_url, request.query)
 
-            # 5. Send
+            # 6. Send
             await self._press_enter(tab_ws_url)
 
-            # 6. Wait for response
+            # 7. Wait for response
             logger.info(f"DeepSeek: waiting for response to '{request.query[:30]}'")
             response_text = await self._wait_for_response(
                 tab_ws_url,
