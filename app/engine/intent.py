@@ -225,6 +225,12 @@ class QueryIntent:
             "speed": "fast",
             "quality": 0.85,
         },
+        "x_twitter": {
+            "types": {"social", "trend", "news", "opinion"},
+            "langs": {"en", "zh"},
+            "speed": "medium",
+            "quality": 0.80,
+        },
     }
 
     # CDP AI Agent 降级链 — 按搜索质量排序

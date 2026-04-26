@@ -70,6 +70,7 @@ class ResultMerger:
         "github_trending": 1.0,
         # 社交/趋势
         "reddit": 1.15,
+        "x_twitter": 1.1,
         "hackernews": 1.1,
         "youtube": 1.05,
         # 通用搜索
