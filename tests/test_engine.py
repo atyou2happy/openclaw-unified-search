@@ -145,7 +145,7 @@ async def test_new_modules_registered(setup_engine):
 async def test_engine_v4_metadata(setup_engine):
     req = SearchRequest(query="python fastapi", sources=["github"], max_results=3, timeout=15)
     resp = await engine.search(req)
-    assert resp.metadata.get("engine_version") == "v4"
+    assert resp.metadata.get("engine_version") == "v5"
 
 
 @pytest.mark.asyncio
@@ -198,4 +198,4 @@ async def test_parallel_execution(setup_engine):
     start = time.time()
     resp = await engine.search(req)
     assert time.time() - start < 25
-    assert resp.metadata.get("engine_version") == "v4"
+    assert resp.metadata.get("engine_version") == "v5"

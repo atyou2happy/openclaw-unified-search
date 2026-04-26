@@ -1,25 +1,28 @@
-"""Result deduplication, RRF fusion, and quality reranking."""
+"""Result deduplication, RRF fusion, and quality reranking (v5)."""
 
 from collections import defaultdict
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
 from app.models import SearchResult
 
+
 class ResultMerger:
-    """结果去重与 RRF 融合 (v4)
+    """结果去重与 RRF 融合 (v5 — 查询相关融合 + freshness boost + 全模块权重)
 
     Reciprocal Rank Fusion:
-    score(d) = Σ 1/(k + rank_i(d))  for each source ranking i
+    score(d) = Σ 1/(k + rank_i(d)) * source_weight  for each source ranking i
     k = 60 (standard)
     """
 
-    RRF_K = 60  # RRF 常数
+    RRF_K = 60
 
     # 权威来源域名
     AUTHORITY_DOMAINS = {
         "github.com",
         "stackoverflow.com",
         "wikipedia.org",
+        "en.wikipedia.org",
+        "zh.wikipedia.org",
         "arxiv.org",
         "python.org",
         "docs.python.org",
@@ -31,52 +34,94 @@ class ResultMerger:
         "pypi.org",
         "crates.io",
         "metaso.cn",
-                "perplexity.ai",
+        "perplexity.ai",
+        "dev.to",
+        "medium.com",
+        "huggingface.co",
+        "paperswithcode.com",
+        "semanticscholar.org",
+        "dl.acm.org",
+        "ieeexplore.ieee.org",
     }
 
-    # source 模块类型权重 (v4 — AI 答案最高)
+    # v5: 全模块 SOURCE_WEIGHTS（38个模块全覆盖）
     SOURCE_WEIGHTS = {
-        "tabbit": 1.5,  # 核心模块，最高优先级
-        "reddit": 1.1,
+        # AI 搜索引擎
+        "tabbit": 1.5,
+        "metaso": 1.4,
+        "perplexity": 1.35,
+        "vane": 1.35,
+        "deepseek": 1.3,
+        "gemini": 1.25,
+        "grok": 1.2,
+        "kimi": 1.15,
+        "glm": 1.15,
+        "qwen": 1.1,
+        # 权威知识源
+        "wikipedia": 1.3,
+        "wiki": 1.1,
+        "academic": 1.2,
+        "crossref": 1.2,
+        "dblp": 1.2,
+        # 编程
+        "github": 1.2,
+        "stackoverflow": 1.25,
+        "devto": 1.1,
+        "github_trending": 1.0,
+        # 社交/趋势
+        "reddit": 1.15,
         "hackernews": 1.1,
         "youtube": 1.05,
-        "github_trending": 1.0,
-        "metaso": 1.4,  # AI 深度答案
-                "perplexity": 1.35,  # AI 答案
-        "perplexity_cite": 1.2,
-        "tavily_answer": 1.3,
-        "you_ai": 1.2,
-        "github": 1.15,
-        "academic": 1.15,
-        "wiki": 1.1,
+        # 通用搜索
         "searxng": 1.0,
         "ddg": 0.95,
         "brave": 0.95,
         "bing": 0.95,
-        "bing_news": 0.9,
         "serper": 0.95,
-        "serper_kg": 1.1,
-        "web": 0.9,
+        "tavily": 1.1,
+        "exa": 1.15,
+        "perplexity_cite": 1.2,
+        "tavily_answer": 1.3,
+        "you": 1.05,
+        "you_ai": 1.2,
         "komo": 0.9,
+        "bing_news": 0.9,
+        "serper_kg": 1.1,
+        # 内容/文档
+        "web": 0.9,
+        "jina": 1.0,
+        "pdf": 0.95,
+        "docs": 1.0,
+        "phind": 1.0,
+        # 本地搜索
+        "meilisearch": 1.0,
+    }
+
+    # v5: freshness_boost 时效性域名
+    FRESHNESS_DOMAINS = {
+        "news.ycombinator.com",
+        "reddit.com",
+        "twitter.com",
+        "x.com",
+        "weibo.com",
+        "zhihu.com",
     }
 
     @classmethod
     def deduplicate(cls, results: list[SearchResult]) -> list[SearchResult]:
-        """智能去重 — URL + 标题相似度 + 内容指纹"""
+        """智能去重 v5 — 阈值从0.90降到0.85，更激进去重"""
         seen_urls = set()
         deduped = []
 
         for r in results:
-            # URL 去重
             url_key = cls._normalize_url(r.url)
             if url_key and url_key in seen_urls:
-                # 合并：保留信息更丰富的那个
                 cls._merge_into_existing(r, deduped, url_key)
                 continue
             if url_key:
                 seen_urls.add(url_key)
 
-            # 标题相似度去重（> 0.90 相似度 + URL 同域视为重复）
+            # v5: 标题相似度阈值从 0.90 → 0.85
             title_key = r.title.lower().strip()
             is_dup = False
             for existing in deduped:
@@ -85,8 +130,7 @@ class ResultMerger:
                     sim = SequenceMatcher(
                         None, title_key[:80], existing_title[:80]
                     ).ratio()
-                    if sim > 0.90:
-                        # 同源同标题才去重，不同 URL 的不同视频保留
+                    if sim > 0.85:  # v5: 0.90 → 0.85
                         if r.source == existing.source and url_key == cls._normalize_url(existing.url):
                             is_dup = True
                             if r.relevance > existing.relevance:
@@ -96,7 +140,6 @@ class ResultMerger:
                                 if r.content:
                                     existing.content = r.content
                         elif r.source != existing.source:
-                            # 不同源 + 高相似度 = 合并
                             is_dup = True
                             if r.relevance > existing.relevance:
                                 existing.title = r.title
@@ -104,7 +147,6 @@ class ResultMerger:
                                 existing.relevance = r.relevance
                                 if r.content:
                                     existing.content = r.content
-                        # 同源不同URL（如YouTube不同视频）：不去重
                         break
             if is_dup:
                 continue
@@ -120,7 +162,6 @@ class ResultMerger:
         """将重复 URL 的信息合并到已有结果中"""
         for existing in existing_list:
             if cls._normalize_url(existing.url) == url_key:
-                # 合并 metadata
                 if new.metadata:
                     if not existing.metadata:
                         existing.metadata = {}
@@ -128,13 +169,10 @@ class ResultMerger:
                     if new.source:
                         engines.add(new.source)
                     existing.metadata["engines"] = list(engines)
-                # 保留更好的 snippet
                 if new.snippet and len(new.snippet) > len(existing.snippet or ""):
                     existing.snippet = new.snippet
-                # 保留更好的 content
                 if new.content and len(new.content) > len(existing.content or ""):
                     existing.content = new.content
-                # 保留更高的 relevance
                 if new.relevance > existing.relevance:
                     existing.relevance = new.relevance
                 break
@@ -143,11 +181,7 @@ class ResultMerger:
     def rrf_fuse(
         cls, results_by_source: dict[str, list[SearchResult]]
     ) -> list[SearchResult]:
-        """Reciprocal Rank Fusion — 多源结果融合
-
-        对每个结果按其在各源中的排名计算 RRF 分数，
-        然后按 RRF 分数排序。这是业界标准的多源融合方法。
-        """
+        """Reciprocal Rank Fusion — 多源结果融合 (v5: 全模块权重)"""
         rrf_scores: dict[str, float] = defaultdict(float)
         url_to_result: dict[str, SearchResult] = {}
 
@@ -158,13 +192,11 @@ class ResultMerger:
                 if url_key not in url_to_result:
                     url_to_result[url_key] = r
                 else:
-                    # 合并信息
                     existing = url_to_result[url_key]
                     if r.snippet and len(r.snippet) > len(existing.snippet or ""):
                         existing.snippet = r.snippet
                     if r.content and len(r.content) > len(existing.content or ""):
                         existing.content = r.content
-                    # 合并 engines
                     if not existing.metadata:
                         existing.metadata = {}
                     engines = set(existing.metadata.get("engines", []))
@@ -172,10 +204,8 @@ class ResultMerger:
                         engines.add(r.source)
                     existing.metadata["engines"] = list(engines)
 
-                # RRF 公式：1/(k + rank) * source_weight
                 rrf_scores[url_key] += (1.0 / (cls.RRF_K + rank)) * source_weight
 
-        # 按 RRF 分数排序
         sorted_urls = sorted(
             rrf_scores.keys(), key=lambda u: rrf_scores[u], reverse=True
         )
@@ -183,33 +213,38 @@ class ResultMerger:
         results = []
         for url_key in sorted_urls:
             r = url_to_result[url_key]
-            r.relevance = min(rrf_scores[url_key] * 100, 1.0)  # 归一化到 0-1
+            r.relevance = min(rrf_scores[url_key] * 100, 1.0)
             results.append(r)
 
         return results
 
     @classmethod
-    def rerank(cls, results: list[SearchResult], query: str = "") -> list[SearchResult]:
-        """质量重排 — v0.5.0: 加入标题-查询相似度计算"""
+    def rerank(
+        cls,
+        results: list[SearchResult],
+        query: str = "",
+        intent: dict | None = None,
+    ) -> list[SearchResult]:
+        """质量重排 v5 — 查询相关融合 + freshness boost"""
         query_lower = query.lower().strip()
         query_words = set(query_lower.split())
+        needs_freshness = intent and "fresh" in intent.get("hints", set())
 
         for r in results:
             score = r.relevance
 
-            # v0.5.0: 标题-查询相似度（核心改进）
+            # 标题-查询相似度
             if query_lower and r.title:
                 title_lower = r.title.lower()
-                # 关键词命中
                 hit_count = sum(1 for w in query_words if w in title_lower)
                 keyword_score = hit_count / max(len(query_words), 1)
-                # SequenceMatcher 相似度
-                seq_score = SequenceMatcher(None, query_lower[:60], title_lower[:60]).ratio()
-                # 综合：关键词命中权重更高
+                seq_score = SequenceMatcher(
+                    None, query_lower[:60], title_lower[:60]
+                ).ratio()
                 relevance_boost = keyword_score * 0.5 + seq_score * 0.3
-                score = max(score, relevance_boost)  # 取较大值，不降低
+                score = max(score, relevance_boost)
 
-            # v0.5.0: snippet 中查询词命中
+            # snippet 中查询词命中
             if query_lower and r.snippet:
                 snippet_lower = r.snippet.lower()
                 snippet_hits = sum(1 for w in query_words if w in snippet_lower)
@@ -226,6 +261,12 @@ class ResultMerger:
                 domain = cls._extract_domain(r.url)
                 if domain in cls.AUTHORITY_DOMAINS:
                     score += 0.1
+
+            # v5: freshness boost — 新闻/实时查询优先时效性来源
+            if needs_freshness and r.url:
+                domain = cls._extract_domain(r.url)
+                if domain in cls.FRESHNESS_DOMAINS:
+                    score += 0.15
 
             # 有完整内容加成
             if r.content and len(r.content) > 200:
@@ -248,14 +289,15 @@ class ResultMerger:
         try:
             parsed = urlparse(url)
             key = f"{parsed.netloc.replace('www.', '')}{parsed.path.rstrip('/')}"
-            # Preserve critical query params (YouTube v=, GitHub params, etc.)
             critical_params = ("v", "p", "id", "q", "repo", "issue", "pull")
             if parsed.query:
                 from urllib.parse import parse_qs
+
                 qs = parse_qs(parsed.query)
                 kept = {k: v[0] for k, v in qs.items() if k in critical_params}
                 if kept:
                     from urllib.parse import urlencode
+
                     key += "?" + urlencode(kept)
             return key.lower()
         except Exception:
@@ -267,8 +309,3 @@ class ResultMerger:
             return urlparse(url).netloc.replace("www.", "").lower()
         except Exception:
             return ""
-
-
-# 搜索引擎 v4 — 真并行
-
-

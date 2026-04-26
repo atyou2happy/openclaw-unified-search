@@ -147,7 +147,7 @@ class SearchEngine:
                 total=0,
                 sources_used=[],
                 errors={"engine": "All selected modules unavailable"},
-                metadata={"intent": intent, "engine_version": "v4"},
+                metadata={"intent": intent, "engine_version": "v5"},
             )
 
         all_results: list[SearchResult] = []
@@ -248,16 +248,14 @@ class SearchEngine:
         # 4. RRF 融合（如果有多个源）
         if len(results_by_source) > 1:
             all_results = ResultMerger.rrf_fuse(results_by_source)
+            # v5: RRF 融合后再 rerank（传入 intent 用于 freshness boost）
+            all_results = ResultMerger.rerank(all_results, query=request.query, intent=intent)
         else:
             # 单源 — 用传统去重 + 重排（v0.5.0: 传入查询词）
             all_results = ResultMerger.deduplicate(all_results)
-            all_results = ResultMerger.rerank(all_results, query=request.query)
+            all_results = ResultMerger.rerank(all_results, query=request.query, intent=intent)
 
-        # 5. Tabbit 结果置顶（如果有）
-        tabbit_results = [r for r in all_results if r.source == "tabbit"]
-        other_results = [r for r in all_results if r.source != "tabbit"]
-        if tabbit_results:
-            all_results = tabbit_results + other_results
+        # v5: 不再硬置顶 tabbit，按 relevance 自然排序（已在 rerank 中加权）
 
         # 6. 截取
         total = len(all_results)
@@ -277,8 +275,8 @@ class SearchEngine:
                     "types": list(intent["types"]),
                     "hints": list(intent["hints"]),
                 },
-                "engine_version": "v4",
-                "search_version": "0.5.0",
+                "engine_version": "v5",
+                "search_version": "0.6.0",
                 "phase1_modules": list(completed_names),
             },
         )

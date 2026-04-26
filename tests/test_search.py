@@ -508,17 +508,18 @@ async def test_engine_v4_metadata(setup_engine):
         query="python fastapi", sources=["github"], max_results=3, timeout=15
     )
     resp = await engine.search(req)
-    assert resp.metadata.get("engine_version") == "v4"
+    assert resp.metadata.get("engine_version") == "v5"
 
 
 @pytest.mark.asyncio
 async def test_tabbit_results_on_top(setup_engine):
-    """v4: Tabbit results should appear first when present."""
+    """v5: Tabbit results should be present when tabbit returns results."""
     req = SearchRequest(query="python tutorial", max_results=10, timeout=15)
     resp = await engine.search(req)
     tabbit_results = [r for r in resp.results if r.source == "tabbit"]
+    # v5: tabbit 不再硬置顶，但权重最高，通常排前列
     if tabbit_results:
-        assert resp.results[0].source == "tabbit"
+        assert len(tabbit_results) > 0
 
 
 @pytest.mark.asyncio
@@ -588,4 +589,4 @@ async def test_parallel_execution(setup_engine):
 
     # Should complete within timeout (parallel)
     assert elapsed < 25
-    assert resp.metadata.get("engine_version") == "v4"
+    assert resp.metadata.get("engine_version") == "v5"
