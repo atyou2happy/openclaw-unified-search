@@ -1,10 +1,12 @@
 """百科搜索模块 — 百度百科 + 维基百科."""
 
+import logging
 import re
-import httpx
-from app.config import Config
+
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class WikiModule(BaseSearchModule):
@@ -14,14 +16,13 @@ class WikiModule(BaseSearchModule):
     async def health_check(self) -> bool:
         # 百度百科直连，不走代理
         try:
-            kwargs = {"timeout": 10, "trust_env": False}
-            async with httpx.AsyncClient(**kwargs) as client:
-                r = await client.get(
-                    "https://baike.baidu.com/item/Python",
-                    headers={"User-Agent": "Mozilla/5.0"},
-                    follow_redirects=True,
-                )
-                return r.status_code == 200
+            client = await self.get_http_client(timeout=10, proxy=None)
+            r = await client.get(
+                "https://baike.baidu.com/item/Python",
+                headers={"User-Agent": "Mozilla/5.0"},
+                follow_redirects=True,
+            )
+            return r.status_code == 200
         except Exception:
             return False
 
@@ -42,59 +43,53 @@ class WikiModule(BaseSearchModule):
 
     async def _search_baidu(self, request: SearchRequest) -> list[SearchResult]:
         """百度百科搜索"""
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": 15, "follow_redirects": True}
-        if proxy:
-            kwargs["proxy"] = proxy
-            kwargs["verify"] = False  # WestWorld self-signed cert
-
         results = []
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
-                # 搜索
-                r = await client.get(
-                    "https://baike.baidu.com/search",
-                    params={"word": request.query, "pn": 0, "rn": request.max_results},
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            client = await self.get_http_client(timeout=15, follow_redirects=True)
+            # 搜索
+            r = await client.get(
+                "https://baike.baidu.com/search",
+                params={"word": request.query, "pn": 0, "rn": request.max_results},
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            )
+            if r.status_code == 200:
+                # 提取搜索结果
+                links = re.findall(
+                    r'href="/item/([^"?#]+)[^"]*"[^>]*>([^<]+)</a>',
+                    r.text
                 )
-                if r.status_code == 200:
-                    # 提取搜索结果
-                    links = re.findall(
-                        r'href="/item/([^"?#]+)[^"]*"[^>]*>([^<]+)</a>',
-                        r.text
-                    )
-                    seen = set()
-                    for slug, title in links[:request.max_results]:
-                        if slug not in seen:
-                            seen.add(slug)
-                            # 获取词条摘要
-                            summary = await self._get_baidu_summary(client, slug)
-                            results.append(SearchResult(
-                                title=title.strip(),
-                                url=f"https://baike.baidu.com/item/{slug}",
-                                snippet=summary[:500],
-                                content=summary,
-                                source="baidu_baike",
-                                relevance=0.8,
-                            ))
-
-                # 如果搜索没结果，直接尝试词条
-                if not results:
-                    summary = await self._get_baidu_summary(client, request.query)
-                    if summary:
+                seen = set()
+                for slug, title in links[:request.max_results]:
+                    if slug not in seen:
+                        seen.add(slug)
+                        # 获取词条摘要
+                        summary = await self._get_baidu_summary(client, slug)
                         results.append(SearchResult(
-                            title=f"百度百科: {request.query}",
-                            url=f"https://baike.baidu.com/item/{request.query}",
+                            title=title.strip(),
+                            url=f"https://baike.baidu.com/item/{slug}",
                             snippet=summary[:500],
                             content=summary,
                             source="baidu_baike",
-                            relevance=0.75,
+                            relevance=0.8,
                         ))
+
+            # 如果搜索没结果，直接尝试词条
+            if not results:
+                summary = await self._get_baidu_summary(client, request.query)
+                if summary:
+                    results.append(SearchResult(
+                        title=f"百度百科: {request.query}",
+                        url=f"https://baike.baidu.com/item/{request.query}",
+                        snippet=summary[:500],
+                        content=summary,
+                        source="baidu_baike",
+                        relevance=0.75,
+                    ))
         except Exception:
             pass
         return results
 
-    async def _get_baidu_summary(self, client: httpx.AsyncClient, slug: str) -> str:
+    async def _get_baidu_summary(self, client, slug: str) -> str:
         """获取百度百科词条摘要"""
         try:
             r = await client.get(
@@ -121,54 +116,48 @@ class WikiModule(BaseSearchModule):
 
     async def _search_wikipedia(self, request: SearchRequest) -> list[SearchResult]:
         """维基百科搜索（需代理，可能被墙）"""
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": 10}
-        if proxy:
-            kwargs["proxy"] = proxy
-            kwargs["verify"] = False  # WestWorld self-signed cert
-
         lang = "zh" if request.language in ("zh", "auto") else "en"
         results = []
 
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
-                # 搜索
-                r = await client.get(
-                    f"https://{lang}.wikipedia.org/w/api.php",
-                    params={
-                        "action": "query",
-                        "list": "search",
-                        "srsearch": request.query,
-                        "format": "json",
-                        "srlimit": min(request.max_results, 5),
-                    },
-                    headers={"User-Agent": "UnifiedSearch/1.0"},
-                )
-                if r.status_code != 200:
-                    return results
+            client = await self.get_http_client(timeout=10)
+            # 搜索
+            r = await client.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": request.query,
+                    "format": "json",
+                    "srlimit": min(request.max_results, 5),
+                },
+                headers={"User-Agent": "UnifiedSearch/1.0"},
+            )
+            if r.status_code != 200:
+                return results
 
-                data = r.json()
-                for item in data.get("query", {}).get("search", []):
-                    title = item["title"]
-                    snippet = re.sub(r'<[^>]+>', '', item.get("snippet", ""))
+            data = r.json()
+            for item in data.get("query", {}).get("search", []):
+                title = item["title"]
+                snippet = re.sub(r'<[^>]+>', '', item.get("snippet", ""))
 
-                    # 获取完整摘要
-                    summary = await self._get_wiki_summary(client, title, lang)
+                # 获取完整摘要
+                summary = await self._get_wiki_summary(client, title, lang)
 
-                    results.append(SearchResult(
-                        title=title,
-                        url=f"https://{lang}.wikipedia.org/wiki/{title}",
-                        snippet=snippet[:500],
-                        content=summary or snippet,
-                        source="wikipedia",
-                        relevance=0.85,
-                    ))
+                results.append(SearchResult(
+                    title=title,
+                    url=f"https://{lang}.wikipedia.org/wiki/{title}",
+                    snippet=snippet[:500],
+                    content=summary or snippet,
+                    source="wikipedia",
+                    relevance=0.85,
+                ))
         except Exception:
             pass
         return results
 
     async def _get_wiki_summary(
-        self, client: httpx.AsyncClient, title: str, lang: str
+        self, client, title: str, lang: str
     ) -> str:
         """获取维基百科词条摘要"""
         try:

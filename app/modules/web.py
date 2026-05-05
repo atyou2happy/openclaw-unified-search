@@ -1,18 +1,13 @@
 """Web search module — TabBitBrowser 优先, SearXNG 备用, DDG 兜底."""
 
 import asyncio
+import logging
 import sys
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
-import httpx
 
-
-def _proxy_client(**kwargs):
-    proxy = Config.get_proxy()
-    if proxy:
-        kwargs["proxy"] = proxy
-    return httpx.AsyncClient(**kwargs)
+logger = logging.getLogger(__name__)
 
 
 class WebSearchModule(BaseSearchModule):
@@ -28,25 +23,24 @@ class WebSearchModule(BaseSearchModule):
 
     async def _check_tabbit(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                resp = await client.get(
-                    f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
-                )
-                return resp.status_code == 200
+            client = await self.get_http_client(timeout=5)
+            resp = await client.get(
+                f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
+            )
+            return resp.status_code == 200
         except Exception:
             return False
 
-    @staticmethod
-    async def _check_searxng() -> bool:
+    async def _check_searxng(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3, trust_env=False) as client:
-                resp = await client.get("http://localhost:8080/healthz")
-                return resp.status_code == 200
+            client = await self.get_http_client(timeout=3)
+            resp = await client.get("http://localhost:8080/healthz")
+            return resp.status_code == 200
         except Exception:
             try:
-                async with httpx.AsyncClient(timeout=3, trust_env=False) as client:
-                    resp = await client.get("http://localhost:8080/", follow_redirects=True)
-                    return resp.status_code == 200
+                client = await self.get_http_client(timeout=3)
+                resp = await client.get("http://localhost:8080/")
+                return resp.status_code == 200
             except Exception:
                 return False
 
@@ -73,16 +67,16 @@ class WebSearchModule(BaseSearchModule):
         import trafilatura
 
         enriched = []
-        async with _proxy_client(timeout=15, follow_redirects=True) as client:
-            for r in results[:5]:
-                try:
-                    resp = await client.get(r.url)
-                    content = trafilatura.extract(resp.text)
-                    if content:
-                        r.content = content[:10000]
-                except Exception:
-                    pass
-                enriched.append(r)
+        client = await self.get_http_client(timeout=15)
+        for r in results[:5]:
+            try:
+                resp = await client.get(r.url)
+                content = trafilatura.extract(resp.text)
+                if content:
+                    r.content = content[:10000]
+            except Exception:
+                pass
+            enriched.append(r)
         return enriched
 
     async def _search_tabbit(self, request: SearchRequest) -> list[SearchResult]:
@@ -121,35 +115,34 @@ class WebSearchModule(BaseSearchModule):
         except (asyncio.TimeoutError, Exception):
             return []
 
-    @staticmethod
-    async def _search_searxng(request: SearchRequest) -> list[SearchResult]:
+    async def _search_searxng(self, request: SearchRequest) -> list[SearchResult]:
         """SearXNG 聚合搜索（247+ 引擎，稳定快速）"""
         try:
-            async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
-                language = "zh-CN" if request.language in ("zh", "auto") else "en-US"
-                resp = await client.get(
-                    "http://localhost:8080/search",
-                    params={
-                        "q": request.query,
-                        "format": "json",
-                        "language": language,
-                        "pageno": 1,
-                    },
-                )
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=8)
+            language = "zh-CN" if request.language in ("zh", "auto") else "en-US"
+            resp = await client.get(
+                "http://localhost:8080/search",
+                params={
+                    "q": request.query,
+                    "format": "json",
+                    "language": language,
+                    "pageno": 1,
+                },
+            )
+            if resp.status_code != 200:
+                return []
 
-                data = resp.json()
-                results = []
-                for item in data.get("results", [])[:request.max_results]:
-                    results.append(SearchResult(
-                        title=item.get("title", "")[:200],
-                        url=item.get("url", ""),
-                        snippet=item.get("content", "")[:200],
-                        source="searxng",
-                        relevance=0.8,
-                    ))
-                return results
+            data = resp.json()
+            results = []
+            for item in data.get("results", [])[:request.max_results]:
+                results.append(SearchResult(
+                    title=item.get("title", "")[:200],
+                    url=item.get("url", ""),
+                    snippet=item.get("content", "")[:200],
+                    source="searxng",
+                    relevance=0.8,
+                ))
+            return results
         except Exception:
             return []
 

@@ -179,11 +179,11 @@ async def cache_clear():
 @router.post("/reload")
 async def reload_modules():
     """热加载模块 — 不重启服务，重新注册所有模块"""
-    from app.modules.cdp_pool import reset_cache
+    from app.modules.cdp_pool import cdp_pool
 
     old_count = len(_registry)
     _registry.clear()
-    reset_cache()
+    cdp_pool.reset_cache()
     avail_cache.invalidate()
 
     modules = auto_register()

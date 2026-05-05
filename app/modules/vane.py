@@ -1,4 +1,3 @@
-import os
 """Vane (Perplexica) — 开源 AI 搜索引擎（34K⭐）.
 
 Vane（原名 Perplexica）是开源的 Perplexity 替代品，使用 SearXNG + LLM
@@ -9,11 +8,13 @@ License: MIT
 API: POST http://localhost:3000/api/search
 """
 
-import httpx
-from app.modules.base import BaseSearchModule
+import logging
+import os
+
 from app.models import SearchRequest, SearchResult
+from app.modules.base import BaseSearchModule
 
-
+logger = logging.getLogger(__name__)
 
 VANE_URL = os.environ.get("VANE_URL", "http://localhost:3000")
 
@@ -26,39 +27,39 @@ class VaneModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{VANE_URL}/api/providers")
-                return resp.status_code == 200
+            client = await self.get_http_client(timeout=5)
+            resp = await client.get(f"{VANE_URL}/api/providers")
+            return resp.status_code == 200
         except Exception:
             return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         try:
-            async with httpx.AsyncClient(timeout=request.timeout) as client:
-                # Vane search API
-                payload = {
-                    "query": request.query,
-                    "searchMode": "balanced",  # speed | balanced | quality
-                    "optimizationMode": "balanced",  # speed | quality
-                }
-                
-                resp = await client.post(
-                    f"{VANE_URL}/api/search",
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "User-Agent": "UnifiedSearch/0.7.0",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = await self.get_http_client(timeout=request.timeout)
+            # Vane search API
+            payload = {
+                "query": request.query,
+                "searchMode": "balanced",  # speed | balanced | quality
+                "optimizationMode": "balanced",  # speed | quality
+            }
+
+            resp = await client.post(
+                f"{VANE_URL}/api/search",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "UnifiedSearch/0.7.0",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             results = []
-            
+
             # Vane 返回结构：{ sources: [...], message: "..." }
             sources = data.get("sources", [])
             message = data.get("message", "")
-            
+
             # 添加 AI 生成的主答案
             if message:
                 results.append(SearchResult(
@@ -70,7 +71,7 @@ class VaneModule(BaseSearchModule):
                         "type": "ai-summary",
                     },
                 ))
-            
+
             # 添加引用来源
             for src in sources:
                 title = src.get("title", "").strip()

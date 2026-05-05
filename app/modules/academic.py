@@ -1,8 +1,12 @@
 """Academic paper search module — Semantic Scholar + arXiv."""
 
+import logging
 from datetime import datetime
+
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class AcademicModule(BaseSearchModule):
@@ -32,48 +36,46 @@ class AcademicModule(BaseSearchModule):
         self, query: str, max_results: int
     ) -> list[SearchResult]:
         """搜索 Semantic Scholar"""
-        import httpx
-
         try:
-            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-                resp = await client.get(
-                    "https://api.semanticscholar.org/graph/v1/paper/search",
-                    params={
-                        "query": query,
-                        "limit": min(max_results, 20),
-                        "fields": "title,url,abstract,year,authors,citationCount,openAccessPdf",
-                    },
+            client = await self.get_http_client(timeout=15)
+            resp = await client.get(
+                "https://api.semanticscholar.org/graph/v1/paper/search",
+                params={
+                    "query": query,
+                    "limit": min(max_results, 20),
+                    "fields": "title,url,abstract,year,authors,citationCount,openAccessPdf",
+                },
+            )
+            if resp.status_code != 200:
+                return []
+
+            results = []
+            for paper in resp.json().get("data", []):
+                pdf_url = ""
+                oa_pdf = paper.get("openAccessPdf")
+                if oa_pdf:
+                    pdf_url = oa_pdf.get("url", "")
+
+                authors = ", ".join(
+                    a.get("name", "") for a in (paper.get("authors") or [])[:3]
                 )
-                if resp.status_code != 200:
-                    return []
+                year = paper.get("year")
 
-                results = []
-                for paper in resp.json().get("data", []):
-                    pdf_url = ""
-                    oa_pdf = paper.get("openAccessPdf")
-                    if oa_pdf:
-                        pdf_url = oa_pdf.get("url", "")
-
-                    authors = ", ".join(
-                        a.get("name", "") for a in (paper.get("authors") or [])[:3]
-                    )
-                    year = paper.get("year")
-
-                    results.append(SearchResult(
-                        title=paper.get("title", ""),
-                        url=paper.get("url", ""),
-                        snippet=paper.get("abstract", "") or "",
-                        source="semantic_scholar",
-                        relevance=min((paper.get("citationCount") or 0) / 100, 1.0),
-                        timestamp=datetime(year, 1, 1) if year else None,
-                        metadata={
-                            "authors": authors,
-                            "year": year,
-                            "citations": paper.get("citationCount", 0),
-                            "pdf_url": pdf_url,
-                        },
-                    ))
-                return results
+                results.append(SearchResult(
+                    title=paper.get("title", ""),
+                    url=paper.get("url", ""),
+                    snippet=paper.get("abstract", "") or "",
+                    source="semantic_scholar",
+                    relevance=min((paper.get("citationCount") or 0) / 100, 1.0),
+                    timestamp=datetime(year, 1, 1) if year else None,
+                    metadata={
+                        "authors": authors,
+                        "year": year,
+                        "citations": paper.get("citationCount", 0),
+                        "pdf_url": pdf_url,
+                    },
+                ))
+            return results
         except Exception:
             return []
 

@@ -7,10 +7,11 @@ API: https://dev.to/api/articles
 Docs: https://developers.forem.com/api
 """
 
-import httpx
+import logging
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class DevToModule(BaseSearchModule):
@@ -24,34 +25,34 @@ class DevToModule(BaseSearchModule):
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         try:
-            async with httpx.AsyncClient(timeout=request.timeout) as client:
-                # DevTo search API
-                params = {
-                    "per_page": min(request.max_results, 10),
-                    "tag": "",  # 可选：按 tag 过滤
-                }
+            client = await self.get_http_client(timeout=request.timeout)
+            # DevTo search API
+            params = {
+                "per_page": min(request.max_results, 10),
+                "tag": "",  # 可选：按 tag 过滤
+            }
 
-                # DevTo 搜索策略：尝试 tag 匹配，否则取最新文章过滤
-                words = request.query.lower().split()
-                tag_candidates = ["python", "javascript", "react", "rust", "go", "docker",
-                                  "kubernetes", "ai", "machinelearning", "webdev", "tutorial",
-                                  "fastapi", "django", "flask", "llm", "opensource", "programming",
-                                  "database", "security", "devops", "cloud", "agents", "rag",
-                                  "llms", "chatgpt", "openai", "ollama"]
-                matched_tags = [w for w in words if w in tag_candidates]
-                if matched_tags:
-                    params["tag"] = matched_tags[0]
-                else:
-                    # 无 tag 匹配时，获取更多文章做关键词过滤
-                    params["per_page"] = min(request.max_results * 3, 30)
+            # DevTo 搜索策略：尝试 tag 匹配，否则取最新文章过滤
+            words = request.query.lower().split()
+            tag_candidates = ["python", "javascript", "react", "rust", "go", "docker",
+                              "kubernetes", "ai", "machinelearning", "webdev", "tutorial",
+                              "fastapi", "django", "flask", "llm", "opensource", "programming",
+                              "database", "security", "devops", "cloud", "agents", "rag",
+                              "llms", "chatgpt", "openai", "ollama"]
+            matched_tags = [w for w in words if w in tag_candidates]
+            if matched_tags:
+                params["tag"] = matched_tags[0]
+            else:
+                # 无 tag 匹配时，获取更多文章做关键词过滤
+                params["per_page"] = min(request.max_results * 3, 30)
 
-                resp = await client.get(
-                    "https://dev.to/api/articles",
-                    params=params,
-                    headers={"User-Agent": "UnifiedSearch/0.8.0"},
-                )
-                resp.raise_for_status()
-                articles = resp.json()
+            resp = await client.get(
+                "https://dev.to/api/articles",
+                params=params,
+                headers={"User-Agent": "UnifiedSearch/0.8.0"},
+            )
+            resp.raise_for_status()
+            articles = resp.json()
 
             results = []
             for article in articles:

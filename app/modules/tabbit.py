@@ -8,11 +8,14 @@ v2 改进：
 
 import asyncio
 import json
+import logging
 import re
 import sys
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class TabBitModule(BaseSearchModule):
@@ -25,14 +28,12 @@ class TabBitModule(BaseSearchModule):
         self._script_path = Config.TABBIT_SCRIPT_PATH
 
     async def health_check(self) -> bool:
-        import httpx
-
         try:
-            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                resp = await client.get(
-                    f"http://localhost:{self._cdp_port}/json",
-                )
-                return resp.status_code == 200
+            client = await self.get_http_client(timeout=5)
+            resp = await client.get(
+                f"http://localhost:{self._cdp_port}/json",
+            )
+            return resp.status_code == 200
         except Exception:
             return False
 
@@ -95,7 +96,7 @@ class TabBitModule(BaseSearchModule):
             pass
 
         urls_found = re.findall(
-            r"(?:^|\n)\s*(?:\d+[\.\)]\s*)?(\[([^\]]+)\]\s*\((https?://[^\s\)]+)\)|(https?://[^\s]+))",
+            r"(?:^|\n)\s*(?:\d+[.\)]\s*)?(\[([^\]]+)\]\s*\((https?://[^\s\)]+)\)|(https?://[^\s]+))",
             content,
         )
 

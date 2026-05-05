@@ -1,11 +1,13 @@
 """Meilisearch module — 本地知识库搜索（459篇wiki）"""
 
-import httpx
+import logging
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
 
+logger = logging.getLogger(__name__)
+
 MEILI_URL = "http://localhost:7700"
-MASTER_KEY = "claw2026"
+MASTER_KEY = "oeJR0Trngn4SGOmTu851aQZD85A_vs01EtgeNQcPATY"
 INDEX_NAME = "wiki"
 
 
@@ -15,9 +17,9 @@ class MeilisearchModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                r = await client.get(f"{MEILI_URL}/health")
-                return r.status_code == 200
+            client = await self.get_http_client(timeout=5)
+            r = await client.get(f"{MEILI_URL}/health")
+            return r.status_code == 200
         except Exception:
             return False
 
@@ -26,46 +28,46 @@ class MeilisearchModule(BaseSearchModule):
         limit = request.max_results or 5
 
         try:
-            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
-                r = await client.post(
-                    f"{MEILI_URL}/indexes/{INDEX_NAME}/search",
-                    headers={
-                        "Authorization": f"Bearer {MASTER_KEY}",
-                        "Content-Type": "application/json",
+            client = await self.get_http_client(timeout=10)
+            r = await client.post(
+                f"{MEILI_URL}/indexes/{INDEX_NAME}/search",
+                headers={
+                    "Authorization": f"Bearer {MASTER_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "q": query,
+                    "limit": limit,
+                    "attributesToCrop": ["content"],
+                    "cropLength": 200,
+                    "attributesToHighlight": ["title", "content"],
+                },
+            )
+
+            if r.status_code != 200:
+                return []
+
+            data = r.json()
+            results = []
+
+            for hit in data.get("hits", []):
+                # Get highlighted content if available
+                formatted = hit.get("_formatted", {})
+                content_preview = formatted.get("content", hit.get("content", ""))[:300]
+                title = formatted.get("title", hit.get("title", ""))
+
+                results.append(SearchResult(
+                    title=f"📚 {title}",
+                    url=hit.get("path", ""),
+                    content=content_preview,
+                    source="meilisearch",
+                    metadata={
+                        "tags": hit.get("tags", []),
+                        "category": hit.get("category", ""),
                     },
-                    json={
-                        "q": query,
-                        "limit": limit,
-                        "attributesToCrop": ["content"],
-                        "cropLength": 200,
-                        "attributesToHighlight": ["title", "content"],
-                    },
-                )
+                ))
 
-                if r.status_code != 200:
-                    return []
-
-                data = r.json()
-                results = []
-
-                for hit in data.get("hits", []):
-                    # Get highlighted content if available
-                    formatted = hit.get("_formatted", {})
-                    content_preview = formatted.get("content", hit.get("content", ""))[:300]
-                    title = formatted.get("title", hit.get("title", ""))
-
-                    results.append(SearchResult(
-                        title=f"📚 {title}",
-                        url=hit.get("path", ""),
-                        content=content_preview,
-                        source="meilisearch",
-                        metadata={
-                            "tags": hit.get("tags", []),
-                            "category": hit.get("category", ""),
-                        },
-                    ))
-
-                return results
+            return results
 
         except Exception:
             return []

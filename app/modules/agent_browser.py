@@ -9,6 +9,7 @@
 
 import asyncio
 import logging
+
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
@@ -28,18 +29,16 @@ class AgentBrowserModule(BaseSearchModule):
 
     async def _get_ws_url(self) -> str | None:
         """从 CDP /json/version 获取 WebSocket URL"""
-        import httpx
-
+        client = await self.get_http_client(timeout=5)
         for port in [9222, 9223]:
             try:
-                async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                    resp = await client.get(f"http://localhost:{port}/json/version")
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        ws_url = data.get("webSocketDebuggerUrl")
-                        if ws_url:
-                            self._cdp_port = port
-                            return ws_url
+                resp = await client.get(f"http://localhost:{port}/json/version")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    ws_url = data.get("webSocketDebuggerUrl")
+                    if ws_url:
+                        self._cdp_port = port
+                        return ws_url
             except Exception:
                 continue
         return None

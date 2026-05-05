@@ -13,7 +13,6 @@ import json
 import logging
 import re
 
-import httpx
 import websockets
 
 from app.models import SearchRequest, SearchResult
@@ -223,11 +222,11 @@ class ScnetModule(BaseSearchModule):
         tab_id = None
         try:
             # 1. 创建新 tab
-            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-                r = await client.put(f"{CDP_BASE}/json/new")
-                data = r.json()
-                tab_id = data["id"]
-                tab_ws = data["webSocketDebuggerUrl"]
+            client = await self.get_http_client(timeout=15)
+            r = await client.put(f"{CDP_BASE}/json/new")
+            data = r.json()
+            tab_id = data["id"]
+            tab_ws = data["webSocketDebuggerUrl"]
 
             # 2. 单个持久 WebSocket 连接
             async with websockets.connect(
@@ -338,8 +337,8 @@ class ScnetModule(BaseSearchModule):
         finally:
             if tab_id:
                 try:
-                    async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-                        await client.get(f"{CDP_BASE}/json/close/{tab_id}")
+                    client = await self.get_http_client(timeout=5)
+                    await client.get(f"{CDP_BASE}/json/close/{tab_id}")
                 except Exception:
                     pass
 

@@ -7,9 +7,13 @@
 API: https://{en,zh}.wikipedia.org/w/api.php
 """
 
-import httpx
-from app.modules.base import BaseSearchModule
+import logging
+import re
+
 from app.models import SearchRequest, SearchResult
+from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class WikipediaModule(BaseSearchModule):
@@ -22,8 +26,6 @@ class WikipediaModule(BaseSearchModule):
         return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        kwargs = {"timeout": request.timeout}  # Wikipedia 不走代理（直连才行）
-
         # 根据语言选择 wiki
         has_chinese = any("\u4e00" <= c <= "\u9fff" for c in request.query)
         lang = "zh" if has_chinese or request.language == "zh" else "en"
@@ -31,65 +33,64 @@ class WikipediaModule(BaseSearchModule):
 
         results = []
         try:
-            async with httpx.AsyncClient(**kwargs, headers={"User-Agent": "UnifiedSearch/0.6.0 (research bot)"}) as client:
-                # Step 1: 搜索
-                resp = await client.get(base_url, params={
-                    "action": "query",
-                    "list": "search",
-                    "srsearch": request.query,
-                    "srlimit": min(request.max_results, 10),
-                    "format": "json",
-                })
-                resp.raise_for_status()
-                data = resp.json()
+            client = await self.get_http_client(timeout=request.timeout)
+            # Step 1: 搜索
+            resp = await client.get(base_url, params={
+                "action": "query",
+                "list": "search",
+                "srsearch": request.query,
+                "srlimit": min(request.max_results, 10),
+                "format": "json",
+            }, headers={"User-Agent": "UnifiedSearch/0.6.0 (research bot)"})
+            resp.raise_for_status()
+            data = resp.json()
 
-                search_results = data.get("query", {}).get("search", [])
-                if not search_results:
-                    return []
+            search_results = data.get("query", {}).get("search", [])
+            if not search_results:
+                return []
 
-                # Step 2: 获取摘要（批量）
-                page_ids = [str(r["pageid"]) for r in search_results]
-                resp2 = await client.get(base_url, params={
-                    "action": "query",
-                    "pageids": "|".join(page_ids),
-                    "prop": "extracts|info",
-                    "exintro": 1,
-                    "explaintext": 1,
-                    "exsentences": 5,
-                    "inprop": "url",
-                    "format": "json",
-                })
-                resp2.raise_for_status()
-                data2 = resp2.json()
+            # Step 2: 获取摘要（批量）
+            page_ids = [str(r["pageid"]) for r in search_results]
+            resp2 = await client.get(base_url, params={
+                "action": "query",
+                "pageids": "|".join(page_ids),
+                "prop": "extracts|info",
+                "exintro": 1,
+                "explaintext": 1,
+                "exsentences": 5,
+                "inprop": "url",
+                "format": "json",
+            }, headers={"User-Agent": "UnifiedSearch/0.6.0 (research bot)"})
+            resp2.raise_for_status()
+            data2 = resp2.json()
 
-                pages = data2.get("query", {}).get("pages", {})
+            pages = data2.get("query", {}).get("pages", {})
 
-                for sr in search_results:
-                    page_id = str(sr["pageid"])
-                    page = pages.get(page_id, {})
-                    title = page.get("title", sr.get("title", ""))
-                    url = page.get("fullurl", f"https://{lang}.wikipedia.org/wiki/{title}")
-                    extract = page.get("extract", "").strip()
+            for sr in search_results:
+                page_id = str(sr["pageid"])
+                page = pages.get(page_id, {})
+                title = page.get("title", sr.get("title", ""))
+                url = page.get("fullurl", f"https://{lang}.wikipedia.org/wiki/{title}")
+                extract = page.get("extract", "").strip()
 
-                    # 清理 HTML 标签（搜索结果 snippet 带有 <span>）
-                    import re
-                    snippet = re.sub(r"<[^>]+>", "", sr.get("snippet", ""))
-                    if extract:
-                        snippet = extract[:300]
+                # 清理 HTML 标签（搜索结果 snippet 带有 <span>）
+                snippet = re.sub(r"<[^>]+>", "", sr.get("snippet", ""))
+                if extract:
+                    snippet = extract[:300]
 
-                    results.append(SearchResult(
-                        title=title,
-                        url=url,
-                        snippet=snippet,
-                        source=f"wikipedia-{lang}",
-                        metadata={
-                            "pageid": sr["pageid"],
-                            "lang": lang,
-                            "wordcount": sr.get("wordcount", 0),
-                            "timestamp": sr.get("timestamp", ""),
-                            "type": "encyclopedia",
-                        },
-                    ))
+                results.append(SearchResult(
+                    title=title,
+                    url=url,
+                    snippet=snippet,
+                    source=f"wikipedia-{lang}",
+                    metadata={
+                        "pageid": sr["pageid"],
+                        "lang": lang,
+                        "wordcount": sr.get("wordcount", 0),
+                        "timestamp": sr.get("timestamp", ""),
+                        "type": "encyclopedia",
+                    },
+                ))
 
             return results
 

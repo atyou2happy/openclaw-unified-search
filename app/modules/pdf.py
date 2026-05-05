@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-import httpx
+
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
@@ -26,31 +26,29 @@ class PDFModule(BaseSearchModule):
     async def fetch_pdf(self, url: str) -> list[SearchResult]:
         """下载并解析 PDF URL"""
         try:
-            async with httpx.AsyncClient(
-                timeout=30, follow_redirects=True
-            ) as client:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=30, follow_redirects=True)
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return []
 
-                content_length = len(resp.content)
-                if content_length > Config.PDF_MAX_SIZE_MB * 1024 * 1024:
-                    return []
+            content_length = len(resp.content)
+            if content_length > Config.PDF_MAX_SIZE_MB * 1024 * 1024:
+                return []
 
-                text = self._extract_text(resp.content)
-                if not text:
-                    return []
+            text = self._extract_text(resp.content)
+            if not text:
+                return []
 
-                filename = url.split("/")[-1] or "document.pdf"
-                return [SearchResult(
-                    title=filename,
-                    url=url,
-                    snippet=text[:500],
-                    content=text[:50000],
-                    source=self.name,
-                    relevance=0.9,
-                    metadata={"pages": text.count("\f") + 1, "size_bytes": content_length},
-                )]
+            filename = url.split("/")[-1] or "document.pdf"
+            return [SearchResult(
+                title=filename,
+                url=url,
+                snippet=text[:500],
+                content=text[:50000],
+                source=self.name,
+                relevance=0.9,
+                metadata={"pages": text.count("\f") + 1, "size_bytes": content_length},
+            )]
         except Exception:
             return []
 

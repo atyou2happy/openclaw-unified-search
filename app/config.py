@@ -1,7 +1,6 @@
 """Configuration management — env vars override defaults."""
 
 import os
-from pathlib import Path
 
 
 def _env(key: str, default: str | None = None) -> str | None:
@@ -47,10 +46,7 @@ class Config:
     # TabBitBrowser
     TABBIT_CDP_PORT: int = 9222
     TABBIT_TIMEOUT: int = 120
-    TABBIT_SCRIPT_PATH: str = str(
-        Path(__file__).parent.parent.parent.parent
-        / "claw-mem" / "tools" / "tabbit_cdp_search.py"
-    )
+    TABBIT_SCRIPT_PATH: str | None = None  # env TABBIT_SCRIPT_PATH overrides
 
     # GitHub
     GITHUB_TOKEN: str | None = None

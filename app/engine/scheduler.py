@@ -59,14 +59,14 @@ class SearchEngine:
                 continue
 
             try:
-                print(f"CDP fallback: trying {module_name} (remaining={remaining:.0f}s)")
+                logger.info("CDP fallback: trying %s (remaining=%.0fs)", module_name, remaining)
                 result = await asyncio.wait_for(
                     module.search(request),
                     timeout=min(remaining - 5, 90)
                 )
                 if result:
                     elapsed = time.time() - start
-                    print(f"CDP fallback: {module_name} succeeded in {elapsed:.1f}s")
+                    logger.info("CDP fallback: %s succeeded in %.1fs", module_name, elapsed)
                     return SearchResponse(
                         query=request.query, results=result,
                         total=len(result), elapsed=elapsed,
@@ -74,10 +74,10 @@ class SearchEngine:
                     )
             except asyncio.TimeoutError:
                 errors.append(f"{module_name}: timeout")
-                print(f"CDP fallback: {module_name} timed out")
+                logger.warning("CDP fallback: %s timed out", module_name)
             except Exception as e:
                 errors.append(f"{module_name}: {str(e)[:100]}")
-                print(f"CDP fallback: {module_name} failed: {e}")
+                logger.warning("CDP fallback: %s failed: %s", module_name, e)
 
         elapsed = time.time() - start
         return SearchResponse(

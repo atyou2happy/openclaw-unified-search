@@ -1,22 +1,85 @@
-"""Base class for search modules."""
+"""Base class for search modules — with shared httpx connection pool."""
 
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+
+import httpx
+
 from app.models import SearchRequest, SearchResult
 
 logger = logging.getLogger(__name__)
 
 
 class BaseSearchModule(ABC):
-    """搜索模块抽象基类 — 所有模块必须继承此类"""
+    """搜索模块抽象基类 — 所有模块必须继承此类
+
+    v1.0.0 changes:
+    - Shared httpx.AsyncClient per module instance (connection pool reuse)
+    - Async close_http_client() for graceful shutdown
+    - get_http_client() auto-creates client with proxy config
+    """
 
     name: str = ""
     description: str = ""
     health_check_timeout: float = 15.0  # 默认15秒（代理网络需更长时间）
 
+    # Shared httpx client — created lazily, reused across requests
+    _http_client: httpx.AsyncClient | None = None
+
     def __init__(self):
         self._available: bool | None = None
+
+    # ============================================================
+    # HTTP client pool (v1.0.0)
+    # ============================================================
+
+    def _get_proxy_url(self) -> str | None:
+        """Get proxy URL from config. Override in subclasses if needed."""
+        from app.config import Config
+        return Config.get_proxy()
+
+    def _get_client_kwargs(self, **overrides) -> dict:
+        """Build httpx.AsyncClient kwargs with proxy + limits."""
+        kwargs: dict = {
+            "timeout": 30,
+            "trust_env": False,
+            "limits": httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+            ),
+            "follow_redirects": True,
+        }
+        proxy = self._get_proxy_url()
+        if proxy:
+            kwargs["proxy"] = proxy
+            kwargs["verify"] = False  # WestWorld proxy uses self-signed cert
+        kwargs.update(overrides)
+        return kwargs
+
+    async def get_http_client(self, **kwargs) -> httpx.AsyncClient:
+        """Get or create shared httpx client for this module.
+
+        Args:
+            **kwargs: Override default client settings (timeout, proxy, etc.)
+
+        Returns:
+            Reusable httpx.AsyncClient instance
+        """
+        if self._http_client is None or self._http_client.is_closed:
+            client_kwargs = self._get_client_kwargs(**kwargs)
+            self._http_client = httpx.AsyncClient(**client_kwargs)
+        return self._http_client
+
+    async def close_http_client(self):
+        """Close httpx client gracefully. Called during app shutdown."""
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    # ============================================================
+    # Abstract interface
+    # ============================================================
 
     @abstractmethod
     async def search(self, request: SearchRequest) -> list[SearchResult]:

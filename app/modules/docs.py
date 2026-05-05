@@ -1,11 +1,14 @@
 """Documentation site scraping module."""
 
+import logging
 import re
 from urllib.parse import urljoin, urlparse
-import httpx
+
 import trafilatura
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class DocsModule(BaseSearchModule):
@@ -39,49 +42,47 @@ class DocsModule(BaseSearchModule):
     async def _fetch_doc(self, url: str, depth: str = "normal") -> list[SearchResult]:
         """抓取文档页面内容"""
         try:
-            async with httpx.AsyncClient(
-                timeout=20, follow_redirects=True
-            ) as client:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=20, follow_redirects=True)
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return []
 
-                html = resp.text
-                content = trafilatura.extract(html)
-                if not content:
-                    return []
+            html = resp.text
+            content = trafilatura.extract(html)
+            if not content:
+                return []
 
-                title = self._extract_title(html, url)
-                results = [SearchResult(
-                    title=title,
-                    url=url,
-                    snippet=content[:500],
-                    content=content[:50000],
-                    source=self.name,
-                    relevance=0.85,
-                )]
+            title = self._extract_title(html, url)
+            results = [SearchResult(
+                title=title,
+                url=url,
+                snippet=content[:500],
+                content=content[:50000],
+                source=self.name,
+                relevance=0.85,
+            )]
 
-                # Deep mode: try to find sub-pages
-                if depth == "deep":
-                    sub_links = self._extract_sub_links(html, url, max_links=5)
-                    for link in sub_links:
-                        try:
-                            sub_resp = await client.get(link)
-                            if sub_resp.status_code == 200:
-                                sub_content = trafilatura.extract(sub_resp.text)
-                                if sub_content:
-                                    results.append(SearchResult(
-                                        title=self._extract_title(sub_resp.text, link),
-                                        url=link,
-                                        snippet=sub_content[:500],
-                                        content=sub_content[:30000],
-                                        source=self.name,
-                                        relevance=0.75,
-                                    ))
-                        except Exception:
-                            continue
+            # Deep mode: try to find sub-pages
+            if depth == "deep":
+                sub_links = self._extract_sub_links(html, url, max_links=5)
+                for link in sub_links:
+                    try:
+                        sub_resp = await client.get(link)
+                        if sub_resp.status_code == 200:
+                            sub_content = trafilatura.extract(sub_resp.text)
+                            if sub_content:
+                                results.append(SearchResult(
+                                    title=self._extract_title(sub_resp.text, link),
+                                    url=link,
+                                    snippet=sub_content[:500],
+                                    content=sub_content[:30000],
+                                    source=self.name,
+                                    relevance=0.75,
+                                ))
+                    except Exception:
+                        continue
 
-                return results
+            return results
         except Exception:
             return []
 

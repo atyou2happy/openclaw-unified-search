@@ -6,10 +6,11 @@ API 完全免费，无需 key。
 API: https://dblp.org/search/publ/api
 """
 
-import httpx
+import logging
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class DBLPModule(BaseSearchModule):
@@ -22,23 +23,18 @@ class DBLPModule(BaseSearchModule):
         return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": request.timeout}
-        if proxy:
-            kwargs["proxy"] = proxy
-
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.get(
-                    "https://dblp.org/search/publ/api",
-                    params={
-                        "q": request.query,
-                        "format": "json",
-                        "h": min(request.max_results, 20),
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = await self.get_http_client(timeout=request.timeout)
+            resp = await client.get(
+                "https://dblp.org/search/publ/api",
+                params={
+                    "q": request.query,
+                    "format": "json",
+                    "h": min(request.max_results, 20),
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             results = []
             hits = data.get("result", {}).get("hits", {}).get("hit", [])

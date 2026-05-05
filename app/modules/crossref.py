@@ -6,11 +6,12 @@ API 免费无限使用，适合论文/学术搜索。
 API: https://api.crossref.org/works
 """
 
+import logging
 import os
-import httpx
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class CrossrefModule(BaseSearchModule):
@@ -23,31 +24,26 @@ class CrossrefModule(BaseSearchModule):
         return True  # 无需 API key
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": request.timeout}
-        if proxy:
-            kwargs["proxy"] = proxy
-
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
-                # 用 polite pool（加 mailto 参数提高速率限制）
-                mailto = os.environ.get("CONTACT_EMAIL", "")
-                params = {
-                    "query": request.query,
-                    "rows": min(request.max_results, 20),
-                    "select": "DOI,title,URL,author,published-print,published-online,container-title,abstract",
-                    "sort": "relevance",
-                }
-                if mailto:
-                    params["mailto"] = mailto
+            client = await self.get_http_client(timeout=request.timeout)
+            # 用 polite pool（加 mailto 参数提高速率限制）
+            mailto = os.environ.get("CONTACT_EMAIL", "")
+            params = {
+                "query": request.query,
+                "rows": min(request.max_results, 20),
+                "select": "DOI,title,URL,author,published-print,published-online,container-title,abstract",
+                "sort": "relevance",
+            }
+            if mailto:
+                params["mailto"] = mailto
 
-                resp = await client.get(
-                    "https://api.crossref.org/works",
-                    params=params,
-                    headers={"User-Agent": "UnifiedSearch/0.6.0 (mailto:contact@example.com)"},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await client.get(
+                "https://api.crossref.org/works",
+                params=params,
+                headers={"User-Agent": "UnifiedSearch/0.6.0 (mailto:contact@example.com)"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             results = []
             items = data.get("message", {}).get("items", [])

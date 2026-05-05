@@ -1,9 +1,10 @@
 """Komo module — 快速 AI 搜索."""
 
-import httpx
-from app.config import Config
+import logging
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class KomoModule(BaseSearchModule):
@@ -21,37 +22,32 @@ class KomoModule(BaseSearchModule):
         return True
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
-        proxy = Config.get_proxy()
-        kwargs = {"timeout": request.timeout}
-        if proxy:
-            kwargs["proxy"] = proxy
-
         try:
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.post(
-                    "https://api.komo.ai/api/v3/search",
-                    json={
-                        "query": request.query,
-                        "limit": min(request.max_results, 10),
-                    },
-                )
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=request.timeout)
+            resp = await client.post(
+                "https://api.komo.ai/api/v3/search",
+                json={
+                    "query": request.query,
+                    "limit": min(request.max_results, 10),
+                },
+            )
+            if resp.status_code != 200:
+                return []
 
-                data = resp.json()
-                results = []
+            data = resp.json()
+            results = []
 
-                for item in data.get("results", []):
-                    results.append(
-                        SearchResult(
-                            title=item.get("title", "")[:200],
-                            url=item.get("url", ""),
-                            snippet=item.get("snippet", ""),
-                            source="komo",
-                            relevance=0.7,
-                        )
+            for item in data.get("results", []):
+                results.append(
+                    SearchResult(
+                        title=item.get("title", "")[:200],
+                        url=item.get("url", ""),
+                        snippet=item.get("snippet", ""),
+                        source="komo",
+                        relevance=0.7,
                     )
+                )
 
-                return results
+            return results
         except Exception:
             return []

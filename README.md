@@ -221,6 +221,17 @@ openclaw-unified-search/
 
 ## 📋 Changelog
 
+### v1.0.0 (2026-05-07) — Architecture Refactoring
+
+- 🔌 **HTTP Connection Pool**: Shared httpx.AsyncClient per module — no more per-request client creation (35 modules migrated)
+- 🔄 **FastAPI Lifespan**: Replaced deprecated `@app.on_event("startup")` with modern `asynccontextmanager` lifespan
+- 🏗️ **CDPPool Class**: Global variables → `CDPPool` singleton class for testability
+- 📝 **Config Centralization**: Removed hardcoded 4-level parent path navigation, env-first `TABBIT_SCRIPT_PATH`
+- 🧹 **Code Quality**: 7 `print()` → `logger`, removed manual proxy kwargs building across all modules
+- 🧪 **Test Enhancement**: 28 new pure unit tests (models, cache, intent, merger, config, availability) — total 55 tests
+- ⚙️ **pyproject.toml**: Added `[tool.pytest]`, `[tool.coverage]` configuration
+- 📁 **conftest.py**: Unified session-scoped fixtures
+
 ### v0.5.1 (2026-04-25) — Agent Browser Module
 
 - 🌐 **Agent Browser**: Playwright CDP-based Google/Bing search as degraded fallback module

@@ -6,10 +6,11 @@ Reddit 的 JSON API 可以直接通过在 URL 后加 .json 获取搜索结果。
 API: https://www.reddit.com/search.json?q=...
 """
 
-import httpx
+import logging
 from app.modules.base import BaseSearchModule
 from app.models import SearchRequest, SearchResult
-from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class RedditModule(BaseSearchModule):
@@ -20,32 +21,32 @@ class RedditModule(BaseSearchModule):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(
-                    "https://www.reddit.com/.json",
-                    headers={"User-Agent": "UnifiedSearch/0.8.0"},
-                )
-                return resp.status_code == 200
+            client = await self.get_http_client(timeout=5)
+            resp = await client.get(
+                "https://www.reddit.com/.json",
+                headers={"User-Agent": "UnifiedSearch/0.8.0"},
+            )
+            return resp.status_code == 200
         except Exception:
             return False
 
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         try:
-            async with httpx.AsyncClient(timeout=request.timeout) as client:
-                params = {
-                    "q": request.query,
-                    "limit": min(request.max_results, 10),
-                    "sort": "relevance",
-                    "type": "link",
-                }
+            client = await self.get_http_client(timeout=request.timeout)
+            params = {
+                "q": request.query,
+                "limit": min(request.max_results, 10),
+                "sort": "relevance",
+                "type": "link",
+            }
 
-                resp = await client.get(
-                    "https://www.reddit.com/search.json",
-                    params=params,
-                    headers={"User-Agent": "UnifiedSearch/0.8.0 (research bot)"},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await client.get(
+                "https://www.reddit.com/search.json",
+                params=params,
+                headers={"User-Agent": "UnifiedSearch/0.8.0 (research bot)"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             results = []
             children = data.get("data", {}).get("children", [])

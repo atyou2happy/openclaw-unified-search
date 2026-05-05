@@ -10,6 +10,12 @@ pkill -f "uvicorn app.main:app --port $PORT" 2>/dev/null
 sleep 2
 
 cd "$DIR"
+
+# Load .env variables so uvicorn process can access them
+set -a
+source .env
+set +a
+
 setsid $PYTHON -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --log-level warning >> $LOG 2>&1 &
 echo "Started, PID=$!"
 sleep 8

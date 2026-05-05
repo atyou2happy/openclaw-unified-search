@@ -1,12 +1,12 @@
 """GitHub module — 仓库搜索 + Zread.ai 深度分析."""
 
+import logging
 import os
 import re
-from datetime import datetime
-import httpx
-from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubModule(BaseSearchModule):
@@ -28,13 +28,6 @@ class GitHubModule(BaseSearchModule):
         if token:
             headers["Authorization"] = f"token {token}"
         return headers
-
-    def _proxy_kwargs(self, **kwargs):
-        proxy = Config.get_proxy()
-        if proxy:
-            kwargs["proxy"] = proxy
-            kwargs["verify"] = False  # WestWorld proxy uses self-signed cert
-        return kwargs
 
     async def health_check(self) -> bool:
         # GitHub API 启动时检查不稳定，跳过，按需失败
@@ -73,99 +66,99 @@ class GitHubModule(BaseSearchModule):
     ) -> list[SearchResult] | None:
         """通过 Jina Reader 提取 Zread.ai 的仓库分析报告"""
         try:
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=30)) as client:
-                resp = await client.get(
-                    f"https://r.jina.ai/{self.ZREAD_URL}/{owner}/{repo}",
-                    headers={"Accept": "text/plain"},
-                )
-                if resp.status_code != 200 or len(resp.text) < 200:
-                    return None
+            client = await self.get_http_client(timeout=30)
+            resp = await client.get(
+                f"https://r.jina.ai/{self.ZREAD_URL}/{owner}/{repo}",
+                headers={"Accept": "text/plain"},
+            )
+            if resp.status_code != 200 or len(resp.text) < 200:
+                return None
 
-                content = resp.text
-                max_chars = 12000 if request.depth == "deep" else 8000
-                return [SearchResult(
-                    title=f"Zread: {owner}/{repo}",
-                    url=f"{self.ZREAD_URL}/{owner}/{repo}",
-                    snippet=content[:500],
-                    content=content[:max_chars],
-                    source="zread",
-                    relevance=0.95,
-                    metadata={
-                        "type": "repo_analysis",
-                        "repo": f"{owner}/{repo}",
-                    },
-                )]
+            content = resp.text
+            max_chars = 12000 if request.depth == "deep" else 8000
+            return [SearchResult(
+                title=f"Zread: {owner}/{repo}",
+                url=f"{self.ZREAD_URL}/{owner}/{repo}",
+                snippet=content[:500],
+                content=content[:max_chars],
+                source="zread",
+                relevance=0.95,
+                metadata={
+                    "type": "repo_analysis",
+                    "repo": f"{owner}/{repo}",
+                },
+            )]
         except Exception:
             return None
 
     async def _github_repo_info(self, owner: str, repo: str) -> list[SearchResult]:
         """GitHub API 获取仓库基本信息"""
         try:
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=15)) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/repos/{owner}/{repo}",
-                    headers=self._headers(),
-                )
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=15)
+            resp = await client.get(
+                f"{self.BASE_URL}/repos/{owner}/{repo}",
+                headers=self._headers(),
+            )
+            if resp.status_code != 200:
+                return []
 
-                d = resp.json()
-                content_parts = [
-                    f"# {d.get('full_name', '')}",
-                    f"\n{d.get('description', '') or ''}",
-                    f"\n**Language:** {d.get('language', 'N/A')}",
-                    f"**Stars:** {d.get('stargazers_count', 0)}",
-                    f"**Forks:** {d.get('forks_count', 0)}",
-                    f"**License:** {(d.get('license') or {}).get('spdx_id', 'N/A')}",
-                    f"**Topics:** {', '.join(d.get('topics', []))}",
-                    f"\n🔗 [Zread 深度分析]({self.ZREAD_URL}/{owner}/{repo})",
-                ]
-                return [SearchResult(
-                    title=d.get("full_name", ""),
-                    url=d.get("html_url", ""),
-                    snippet=d.get("description", "") or "",
-                    content="\n".join(content_parts),
-                    source="github",
-                    relevance=0.85,
-                    metadata={
-                        "stars": d.get("stargazers_count", 0),
-                        "language": d.get("language", ""),
-                        "license": (d.get("license") or {}).get("spdx_id", ""),
-                        "forks": d.get("forks_count", 0),
-                        "topics": d.get("topics", []),
-                    },
-                )]
+            d = resp.json()
+            content_parts = [
+                f"# {d.get('full_name', '')}",
+                f"\n{d.get('description', '') or ''}",
+                f"\n**Language:** {d.get('language', 'N/A')}",
+                f"**Stars:** {d.get('stargazers_count', 0)}",
+                f"**Forks:** {d.get('forks_count', 0)}",
+                f"**License:** {(d.get('license') or {}).get('spdx_id', 'N/A')}",
+                f"**Topics:** {', '.join(d.get('topics', []))}",
+                f"\n🔗 [Zread 深度分析]({self.ZREAD_URL}/{owner}/{repo})",
+            ]
+            return [SearchResult(
+                title=d.get("full_name", ""),
+                url=d.get("html_url", ""),
+                snippet=d.get("description", "") or "",
+                content="\n".join(content_parts),
+                source="github",
+                relevance=0.85,
+                metadata={
+                    "stars": d.get("stargazers_count", 0),
+                    "language": d.get("language", ""),
+                    "license": (d.get("license") or {}).get("spdx_id", ""),
+                    "forks": d.get("forks_count", 0),
+                    "topics": d.get("topics", []),
+                },
+            )]
         except Exception:
             return []
 
     async def _github_search(self, request: SearchRequest) -> list[SearchResult]:
         """普通 GitHub 仓库搜索"""
         try:
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=request.timeout)) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/search/repositories",
-                    params={"q": request.query, "per_page": request.max_results},
-                    headers=self._headers(),
-                )
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=request.timeout)
+            resp = await client.get(
+                f"{self.BASE_URL}/search/repositories",
+                params={"q": request.query, "per_page": request.max_results},
+                headers=self._headers(),
+            )
+            if resp.status_code != 200:
+                return []
 
-                results = []
-                for item in resp.json().get("items", []):
-                    owner_repo = item.get("full_name", "")
-                    results.append(SearchResult(
-                        title=owner_repo,
-                        url=item.get("html_url", ""),
-                        snippet=item.get("description", "") or "",
-                        source="github",
-                        relevance=min(item.get("stargazers_count", 0) / 1000, 1.0),
-                        metadata={
-                            "stars": item.get("stargazers_count", 0),
-                            "language": item.get("language", ""),
-                            "zread": f"{self.ZREAD_URL}/{owner_repo}",
-                        },
-                    ))
-                return results
+            results = []
+            for item in resp.json().get("items", []):
+                owner_repo = item.get("full_name", "")
+                results.append(SearchResult(
+                    title=owner_repo,
+                    url=item.get("html_url", ""),
+                    snippet=item.get("description", "") or "",
+                    source="github",
+                    relevance=min(item.get("stargazers_count", 0) / 1000, 1.0),
+                    metadata={
+                        "stars": item.get("stargazers_count", 0),
+                        "language": item.get("language", ""),
+                        "zread": f"{self.ZREAD_URL}/{owner_repo}",
+                    },
+                ))
+            return results
         except Exception:
             return []
 
@@ -173,14 +166,14 @@ class GitHubModule(BaseSearchModule):
         """获取仓库 README"""
         try:
             import base64
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=15)) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/repos/{owner}/{repo}/readme",
-                    headers=self._headers(),
-                )
-                if resp.status_code == 200:
-                    content = resp.json().get("content", "")
-                    return base64.b64decode(content).decode("utf-8")
+            client = await self.get_http_client(timeout=15)
+            resp = await client.get(
+                f"{self.BASE_URL}/repos/{owner}/{repo}/readme",
+                headers=self._headers(),
+            )
+            if resp.status_code == 200:
+                content = resp.json().get("content", "")
+                return base64.b64decode(content).decode("utf-8")
         except Exception:
             pass
         return None
@@ -189,14 +182,14 @@ class GitHubModule(BaseSearchModule):
         """获取仓库文件内容"""
         try:
             import base64
-            async with httpx.AsyncClient(**self._proxy_kwargs(timeout=15)) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/repos/{owner}/{repo}/contents/{path}",
-                    headers=self._headers(),
-                )
-                if resp.status_code == 200:
-                    content = resp.json().get("content", "")
-                    return base64.b64decode(content).decode("utf-8")
+            client = await self.get_http_client(timeout=15)
+            resp = await client.get(
+                f"{self.BASE_URL}/repos/{owner}/{repo}/contents/{path}",
+                headers=self._headers(),
+            )
+            if resp.status_code == 200:
+                content = resp.json().get("content", "")
+                return base64.b64decode(content).decode("utf-8")
         except Exception:
             pass
         return None

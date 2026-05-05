@@ -1,10 +1,12 @@
 """DuckDuckGo module — 免费无限额度的网页搜索."""
 
 import asyncio
-import httpx
+import logging
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 # DDG 网络较慢（经代理绕路），设置独立超时上限避免拖慢整体
 DDG_TIMEOUT = 5
@@ -36,30 +38,27 @@ class DuckDuckGoModule(BaseSearchModule):
 
         # 策略2: httpx HTML 抓取
         try:
-            kwargs = {"timeout": timeout}
-            if proxy:
-                kwargs["proxy"] = proxy
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.get(
-                    "https://html.duckduckgo.com/html/",
-                    params={"q": request.query, "b": min(request.max_results, 20)},
-                )
-                if resp.status_code == 200 and "result__" in resp.text:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    results = []
-                    for result in soup.select(".result__body")[:request.max_results]:
-                        title_elem = result.select_one(".result__a")
-                        snippet_elem = result.select_one(".result__snippet")
-                        if title_elem:
-                            results.append(SearchResult(
-                                title=title_elem.get_text()[:200],
-                                url=title_elem.get("href", ""),
-                                snippet=snippet_elem.get_text()[:200] if snippet_elem else "",
-                                source="ddg",
-                                relevance=0.7,
-                            ))
-                    return results
+            client = await self.get_http_client(timeout=timeout)
+            resp = await client.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": request.query, "b": min(request.max_results, 20)},
+            )
+            if resp.status_code == 200 and "result__" in resp.text:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(resp.text, "html.parser")
+                results = []
+                for result in soup.select(".result__body")[:request.max_results]:
+                    title_elem = result.select_one(".result__a")
+                    snippet_elem = result.select_one(".result__snippet")
+                    if title_elem:
+                        results.append(SearchResult(
+                            title=title_elem.get_text()[:200],
+                            url=title_elem.get("href", ""),
+                            snippet=snippet_elem.get_text()[:200] if snippet_elem else "",
+                            source="ddg",
+                            relevance=0.7,
+                        ))
+                return results
         except Exception:
             pass
 

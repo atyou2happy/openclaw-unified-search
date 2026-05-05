@@ -1,9 +1,12 @@
 """Jina Reader module — 免费网页内容提取（r.jina.ai，无需API key）."""
 
-import httpx
+import logging
+
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class JinaModule(BaseSearchModule):
@@ -55,27 +58,23 @@ class JinaModule(BaseSearchModule):
     async def _read_url(self, url: str, request: SearchRequest) -> list[SearchResult]:
         """提取单个 URL 的完整内容"""
         try:
-            proxy = Config.get_proxy()
-            kwargs = {"timeout": 30}
-            if proxy:
-                kwargs["proxy"] = proxy
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.get(
-                    f"{self.READ_URL}{url}",
-                    headers={"Accept": "text/plain"},
-                )
-                if resp.status_code != 200:
-                    return []
+            client = await self.get_http_client(timeout=30)
+            resp = await client.get(
+                f"{self.READ_URL}{url}",
+                headers={"Accept": "text/plain"},
+            )
+            if resp.status_code != 200:
+                return []
 
-                content = resp.text
-                max_chars = 10000 if request.depth == "deep" else 5000
-                return [SearchResult(
-                    title=f"Jina Reader: {url}",
-                    url=url,
-                    snippet=content[:500],
-                    content=content[:max_chars],
-                    source=self.name,
-                    relevance=0.9,
-                )]
+            content = resp.text
+            max_chars = 10000 if request.depth == "deep" else 5000
+            return [SearchResult(
+                title=f"Jina Reader: {url}",
+                url=url,
+                snippet=content[:500],
+                content=content[:max_chars],
+                source=self.name,
+                relevance=0.9,
+            )]
         except Exception:
             return []

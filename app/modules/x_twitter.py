@@ -7,8 +7,6 @@ Fallback: SearXNG with twitter/x.com filter
 import logging
 from typing import Any
 
-import httpx
-
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
@@ -39,26 +37,24 @@ class XTwitterModule(BaseSearchModule):
         try:
             for host in self.NITTER_INSTANCES:
                 try:
-                    async with httpx.AsyncClient(
-                        timeout=5, follow_redirects=True
-                    ) as client:
-                        resp = await client.get(
-                            f"https://{host}/",
-                            headers={"User-Agent": "Mozilla/5.0"},
-                        )
-                        if resp.status_code == 200:
-                            self._available = True
-                            return True
+                    client = await self.get_http_client(timeout=5)
+                    resp = await client.get(
+                        f"https://{host}/",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                    )
+                    if resp.status_code == 200:
+                        self._available = True
+                        return True
                 except Exception:
                     continue
             # Fallback: SearXNG 可用即可
             try:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get(
-                        Config.get_searxng_url() + "/healthz"
-                    )
-                    self._available = resp.status_code == 200
-                    return self._available
+                client = await self.get_http_client(timeout=5)
+                resp = await client.get(
+                    Config.get_searxng_url() + "/healthz"
+                )
+                self._available = resp.status_code == 200
+                return self._available
             except Exception:
                 pass
             self._available = False
@@ -91,25 +87,24 @@ class XTwitterModule(BaseSearchModule):
 
         for host in self.NITTER_INSTANCES:
             try:
-                async with httpx.AsyncClient(
+                client = await self.get_http_client(
                     timeout=request.timeout,
-                    follow_redirects=True,
                     headers={"User-Agent": "Mozilla/5.0"},
-                ) as client:
-                    # Nitter 搜索页面
-                    resp = await client.get(
-                        f"https://{host}/search",
-                        params={"q": query, "f": "tweets"},
-                    )
-                    if resp.status_code != 200:
-                        continue
+                )
+                # Nitter 搜索页面
+                resp = await client.get(
+                    f"https://{host}/search",
+                    params={"q": query, "f": "tweets"},
+                )
+                if resp.status_code != 200:
+                    continue
 
-                    # 解析 HTML 结果
-                    results = self._parse_nitter_html(
-                        resp.text, host, query
-                    )
-                    if results:
-                        return results
+                # 解析 HTML 结果
+                results = self._parse_nitter_html(
+                    resp.text, host, query
+                )
+                if results:
+                    return results
             except Exception as e:
                 logger.debug(f"Nitter {host} failed: {e}")
                 continue
@@ -176,36 +171,32 @@ class XTwitterModule(BaseSearchModule):
 
         try:
             searxng_url = Config.get_searxng_url()
-            proxy = Config.get_proxy()
-            kwargs: dict[str, Any] = {"timeout": request.timeout}
-            if proxy:
-                kwargs["proxy"] = proxy
 
-            async with httpx.AsyncClient(**kwargs) as client:
-                resp = await client.get(
-                    f"{searxng_url}/search",
-                    params={
-                        "q": f"{request.query} x.com OR twitter.com",
-                        "format": "json",
-                    },
-                )
-                if resp.status_code != 200:
-                    return results
+            client = await self.get_http_client(timeout=request.timeout)
+            resp = await client.get(
+                f"{searxng_url}/search",
+                params={
+                    "q": f"{request.query} x.com OR twitter.com",
+                    "format": "json",
+                },
+            )
+            if resp.status_code != 200:
+                return results
 
-                data = resp.json()
-                for r in data.get("results", []):
-                    url = r.get("url", "")
-                    if "x.com" in url or "twitter.com" in url:
-                        results.append(
-                            SearchResult(
-                                title=r.get("title", ""),
-                                url=url,
-                                snippet=r.get("content", ""),
-                                source="x_twitter",
-                                relevance=0.7,
-                                metadata={"platform": "x/twitter"},
-                            )
+            data = resp.json()
+            for r in data.get("results", []):
+                url = r.get("url", "")
+                if "x.com" in url or "twitter.com" in url:
+                    results.append(
+                        SearchResult(
+                            title=r.get("title", ""),
+                            url=url,
+                            snippet=r.get("content", ""),
+                            source="x_twitter",
+                            relevance=0.7,
+                            metadata={"platform": "x/twitter"},
                         )
+                    )
         except Exception as e:
             logger.debug(f"SearXNG X search failed: {e}")
 

@@ -1,22 +1,23 @@
 """SearXNG module — 自建聚合搜索引擎（247+引擎）."""
 
-import httpx
-from app.config import Config
+import logging
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
+
+logger = logging.getLogger(__name__)
 
 
 class SearXNGModule(BaseSearchModule):
     name = "searxng"
     description = "SearXNG 聚合搜索（Google/Bing/DDG/Brave 等 247+ 引擎）"
-    BASE_URL = "http://127.0.0.1:8080"
+    BASE_URL = "http://[::1]:8080"
     health_check_timeout = 30.0  # Docker 网络可能慢
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-                resp = await client.get(f"{self.BASE_URL}/healthz")
-                return resp.status_code == 200 and "OK" in resp.text
+            client = await self.get_http_client(timeout=15)
+            resp = await client.get(f"{self.BASE_URL}/healthz")
+            return resp.status_code == 200 and "OK" in resp.text
         except Exception:
             return False
 
@@ -29,14 +30,14 @@ class SearXNGModule(BaseSearchModule):
                 "pageno": 1,
             }
 
-            async with httpx.AsyncClient(timeout=request.timeout, trust_env=False) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/search",
-                    params=params,
-                )
-                if resp.status_code != 200:
-                    return []
-                data = resp.json()
+            client = await self.get_http_client(timeout=request.timeout)
+            resp = await client.get(
+                f"{self.BASE_URL}/search",
+                params=params,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
 
             results = []
             for item in data.get("results", [])[:request.limit]:

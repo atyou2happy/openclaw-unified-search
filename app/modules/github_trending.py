@@ -1,9 +1,7 @@
 """GitHub Trending module — search GitHub repos via trending + gh API."""
 
 import logging
-import httpx
 import re
-from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
 
@@ -20,7 +18,6 @@ class GitHubTrendingModule(BaseSearchModule):
     async def search(self, request: SearchRequest) -> list[SearchResult]:
         query = request.query.strip()
         max_results = request.max_results
-        proxy = Config.get_proxy()
         results = []
 
         try:
@@ -29,15 +26,15 @@ class GitHubTrendingModule(BaseSearchModule):
                 "Accept": "text/html",
             }
 
-            async with httpx.AsyncClient(timeout=request.timeout, proxy=proxy, follow_redirects=True) as client:
-                # Strategy 1: GitHub search (HTML scrape)
-                search_results = await self._search_repos(client, headers, query, max_results)
-                results.extend(search_results)
+            client = await self.get_http_client(timeout=request.timeout)
+            # Strategy 1: GitHub search (HTML scrape)
+            search_results = await self._search_repos(client, headers, query, max_results)
+            results.extend(search_results)
 
-                # Strategy 2: Fallback to trending
-                if len(results) < max_results:
-                    trending = await self._search_trending(client, headers, max_results - len(results))
-                    results.extend(trending)
+            # Strategy 2: Fallback to trending
+            if len(results) < max_results:
+                trending = await self._search_trending(client, headers, max_results - len(results))
+                results.extend(trending)
 
         except Exception as e:
             logger.error(f"GitHub trending search error: {e}")
