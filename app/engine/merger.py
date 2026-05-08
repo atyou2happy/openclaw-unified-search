@@ -279,11 +279,8 @@ class ResultMerger:
                 snippet_hits = sum(1 for w in query_words if w in snippet_lower)
                 score += min(snippet_hits / max(len(query_words), 1), 1.0) * 0.2
 
-            # Source weight
-            source = (
-                r.metadata.get("engine_primary", r.source) if r.metadata else r.source
-            )
-            score *= cls.SOURCE_WEIGHTS.get(source, 1.0)
+            # Source weight — SKIP: already applied in rrf_fuse()
+            # v7: removed double-counting of SOURCE_WEIGHTS (was applied both in rrf_fuse and rerank)
 
             # Authority domain boost
             if r.url:
@@ -330,27 +327,91 @@ class ResultMerger:
 
         return results
 
+    # Category mapping: module type → result category
+    MODULE_CATEGORY_MAP = {
+        # Academic
+        "academic": "academic", "crossref": "academic", "dblp": "academic",
+        "semantic_scholar": "academic",
+        # Code
+        "github": "code", "stackoverflow": "code", "devto": "code",
+        "github_trending": "code",
+        # Social / discussion
+        "reddit": "social", "hackernews": "social", "x_twitter": "social",
+        # Video
+        "youtube": "video",
+        # News
+        "bing_news": "news", "finance_news": "news",
+        # Knowledge
+        "wikipedia": "knowledge", "wiki": "knowledge",
+        # AI answers
+        "tabbit": "answer", "metaso": "answer", "perplexity": "answer",
+        "deepseek": "answer", "gemini": "answer", "grok": "answer",
+        "kimi": "answer", "glm": "answer", "qwen": "answer",
+        "vane": "answer",
+    }
+
+    @classmethod
+    def categorize(cls, result: SearchResult) -> str:
+        """Auto-categorize a result based on its source module."""
+        source = result.source or ""
+        return cls.MODULE_CATEGORY_MAP.get(source, "web")
+
     @classmethod
     def _inject_diversity(
         cls, results: list[SearchResult], max_per_source: int
     ) -> list[SearchResult]:
-        """Ensure no single source dominates the results.
+        """Ensure source + category diversity in results.
 
-        Keeps top max_per_source from each source, then fills remaining slots.
+        v7: two-level diversity — per-source limit + per-category minimum.
+        1. Limit same-source to max_per_source
+        2. Ensure each represented category has at least min_per_category in top slots
         """
         source_counts: Counter = Counter()
+        category_counts: Counter = Counter()
         diverse: list[SearchResult] = []
         overflow: list[SearchResult] = []
 
+        # Auto-categorize all results
+        for r in results:
+            cat = cls.categorize(r)
+            if "category" not in (r.metadata or {}):
+                if not r.metadata:
+                    r.metadata = {}
+                r.metadata["category"] = cat
+
+        min_per_category = 1  # Each category gets at least 1 in diverse list
+        total_categories = len(set(r.metadata.get("category", "web") for r in results))
+
         for r in results:
             source = r.source or "unknown"
-            if source_counts[source] < max_per_source:
+            cat = r.metadata.get("category", "web")
+            source_ok = source_counts[source] < max_per_source
+
+            if source_ok:
                 diverse.append(r)
                 source_counts[source] += 1
+                category_counts[cat] += 1
             else:
                 overflow.append(r)
 
-        # Append overflow at the end (still sorted by relevance within overflow)
+        # Ensure category diversity: if a category has 0 in diverse, pull from overflow
+        represented_cats = set(category_counts.keys())
+        all_cats = set(r.metadata.get("category", "web") for r in results)
+        missing_cats = all_cats - represented_cats
+
+        if missing_cats:
+            still_overflow = []
+            for r in overflow:
+                cat = r.metadata.get("category", "web")
+                if cat in missing_cats and category_counts[cat] < min_per_category:
+                    diverse.append(r)
+                    category_counts[cat] += 1
+                    if cat not in missing_cats or category_counts[cat] >= min_per_category:
+                        missing_cats.discard(cat)
+                else:
+                    still_overflow.append(r)
+            overflow = still_overflow
+
         return diverse + overflow
 
     @staticmethod

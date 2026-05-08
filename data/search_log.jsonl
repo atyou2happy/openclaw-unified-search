@@ -1,0 +1,2 @@
+{"ts": 1778251899.3851333, "query": "FastCode", "sources": [], "n_results": 0, "elapsed": 5.035, "errors": false, "n_errors": 0, "intent": {"types": ["general"], "confidence": 0.3}, "qa": {"lang": "en", "type": "general", "corrected": false}}
+{"ts": 1778251905.4768827, "query": "python fastapi", "sources": [], "n_results": 0, "elapsed": 5.006, "errors": false, "n_errors": 0, "intent": {"types": ["code"], "confidence": 0.7}, "qa": {"lang": "en", "type": "code", "corrected": false}}

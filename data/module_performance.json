@@ -1,14 +1,26 @@
 {
   "github": {
     "name": "github",
-    "total_requests": 2,
+    "total_requests": 6,
+    "successful_requests": 2,
+    "avg_response_time": 1.3299730615262986,
+    "avg_result_count": 0.5700000000000001,
+    "avg_quality_score": 0.07156666666666667,
+    "consecutive_failures": 3,
+    "last_success_time": 1778248926.0156696,
+    "last_failure_time": 1778251905.4694424,
+    "success_rate_7d": 0.3333333333333333
+  },
+  "academic": {
+    "name": "academic",
+    "total_requests": 1,
     "successful_requests": 1,
-    "avg_response_time": 0.34776719093322755,
+    "avg_response_time": 7.734657788276673,
     "avg_result_count": 0.30000000000000004,
-    "avg_quality_score": 0.03766666666666667,
-    "consecutive_failures": 1,
-    "last_success_time": 1778247627.919028,
-    "last_failure_time": 1778247627.9361384,
-    "success_rate_7d": 0.5
+    "avg_quality_score": 0.002333333333333333,
+    "consecutive_failures": 0,
+    "last_success_time": 1778249003.3988504,
+    "last_failure_time": 0.0,
+    "success_rate_7d": 1.0
   }
 }

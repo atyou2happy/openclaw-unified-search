@@ -18,6 +18,7 @@ from app.engine.intent import QueryIntent
 from app.engine.merger import ResultMerger
 from app.engine.query_enhancer import QueryEnhancer
 from app.engine.performance_tracker import perf_tracker
+from app.engine.search_logger import search_logger
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +185,10 @@ class SearchEngine:
         tasks: dict[str, asyncio.Task] = {}
         for name in selected:
             module = self._modules[name]
+            # v7: Dynamic timeout allocation based on perf history
+            dyn_timeout = perf_tracker.suggest_timeout(name, default_timeout=request.timeout)
             task = asyncio.create_task(
-                self._safe_search(module, request),
+                self._safe_search(module, request, timeout_override=dyn_timeout),
                 name=f"search_{name}",
             )
             tasks[name] = task
@@ -323,6 +326,22 @@ class SearchEngine:
         )
 
         cache.put(request, response)
+
+        # v7: Log search for analytics
+        search_logger.log_search(
+            query=request.query,
+            sources_used=sources_used,
+            total_results=total,
+            elapsed=elapsed,
+            errors=errors if errors else None,
+            intent=intent,
+            query_analysis={
+                "language": analysis.language,
+                "primary_type": analysis.primary_type,
+                "spell_corrected": analysis.spell_corrected,
+            },
+        )
+
         return response
 
     async def search_module(
@@ -357,18 +376,25 @@ class SearchEngine:
 
     @staticmethod
     async def _safe_search(
-        module: BaseSearchModule, request: SearchRequest
+        module: BaseSearchModule, request: SearchRequest,
+        timeout_override: float | None = None,
     ) -> list[SearchResult]:
         module_name = module.name
         start_time = time.time()
         try:
-            # Reset cached availability so it re-checks
-            module.reset_availability()
+            # v7: Do NOT reset availability — let avail_cache work properly
             avail = await module.is_available()
             if not avail:
                 perf_tracker.record_failure(module_name, time.time() - start_time)
                 return []
-            results = await module.search(request)
+
+            # v7: Use dynamic timeout from perf_tracker if available
+            effective_timeout = timeout_override or request.timeout
+
+            results = await asyncio.wait_for(
+                module.search(request),
+                timeout=effective_timeout,
+            )
             elapsed = time.time() - start_time
 
             # v6: Record performance
@@ -382,6 +408,10 @@ class SearchEngine:
                 perf_tracker.record_failure(module_name, elapsed)
 
             return results
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            perf_tracker.record_failure(module_name, elapsed)
+            return []
         except Exception:
             elapsed = time.time() - start_time
             perf_tracker.record_failure(module_name, elapsed)
