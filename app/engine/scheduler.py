@@ -1,4 +1,10 @@
-"""Search engine — parallel scheduling with two-phase strategy."""
+"""Search engine — parallel scheduling with adaptive two-phase strategy (v6).
+
+v6 changes:
+- QueryEnhancer integration: query analysis before search
+- PerformanceTracker integration: dynamic module selection + timeout
+- Enhanced intent dict format for v6 merger compatibility
+"""
 
 import asyncio
 import logging
@@ -10,6 +16,8 @@ from app.cache import cache
 from app.engine.availability import avail_cache
 from app.engine.intent import QueryIntent
 from app.engine.merger import ResultMerger
+from app.engine.query_enhancer import QueryEnhancer
+from app.engine.performance_tracker import perf_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +95,7 @@ class SearchEngine:
         )
 
     async def search(self, request: SearchRequest) -> SearchResponse:
-        """v4 搜索：意图识别 → tabbit 始终选中 → 真并行调度 → RRF 融合"""
+        """v6 search: query enhance → intent → adaptive select → parallel → RRF + quality."""
         start = time.time()
 
         # Check cache
@@ -95,15 +103,33 @@ class SearchEngine:
         if cached is not None:
             return cached
 
-        # 1. 意图识别
-        intent = QueryIntent.detect(request.query, request.language)
+        # 1. Query enhancement (v6)
+        analysis = QueryEnhancer.enhance(request.query, request.language)
 
-        # 2. 选择模块（tabbit 始终在列）
+        # Use enhanced query for search if beneficial
+        search_query = analysis.enhanced_query or request.query
+
+        # 2. Intent detection (existing + enhanced analysis)
+        intent = QueryIntent.detect(search_query, analysis.language)
+
+        # v6: Merge enhanced intent data
+        if analysis.primary_type != "general":
+            intent["types"].add(analysis.primary_type)
+        for st in analysis.secondary_types:
+            intent["types"].add(st)
+        intent["hints"].add(f"lang:{analysis.language}")
+        if analysis.is_question:
+            intent["hints"].add("question")
+        intent["confidence"] = analysis.confidence
+
+        # 3. Module selection (existing logic + perf tracker filtering)
         if request.sources:
             selected = [s for s in request.sources if s in self._modules]
-            # 用户明确指定 sources 时不再强制加 tabbit
         else:
             selected = QueryIntent.select_modules(intent, self._modules)
+
+        # v6: Filter out modules with poor performance history
+        selected = [s for s in selected if not perf_tracker.should_skip(s)]
 
         if not selected:
             return SearchResponse(
@@ -263,6 +289,13 @@ class SearchEngine:
 
         elapsed = time.time() - start
 
+        # v6: Save performance data periodically
+        perf_tracker.save()
+
+        # v6: Convert intent sets to lists for JSON serialization
+        intent_types = list(intent.get("types", set()))
+        intent_hints = list(intent.get("hints", set()))
+
         response = SearchResponse(
             query=request.query,
             results=all_results,
@@ -272,12 +305,20 @@ class SearchEngine:
             errors=errors,
             metadata={
                 "intent": {
-                    "types": list(intent["types"]),
-                    "hints": list(intent["hints"]),
+                    "types": intent_types,
+                    "hints": intent_hints,
+                    "confidence": intent.get("confidence", 0.5),
                 },
-                "engine_version": "v5",
-                "search_version": "0.6.0",
+                "engine_version": "v6",
+                "search_version": "2.0.0",
                 "phase1_modules": list(completed_names),
+                "query_analysis": {
+                    "enhanced_query": analysis.enhanced_query,
+                    "language": analysis.language,
+                    "is_question": analysis.is_question,
+                    "primary_type": analysis.primary_type,
+                    "spell_corrected": analysis.spell_corrected,
+                },
             },
         )
 
@@ -318,15 +359,32 @@ class SearchEngine:
     async def _safe_search(
         module: BaseSearchModule, request: SearchRequest
     ) -> list[SearchResult]:
+        module_name = module.name
+        start_time = time.time()
         try:
             # Reset cached availability so it re-checks
             module.reset_availability()
             avail = await module.is_available()
             if not avail:
+                perf_tracker.record_failure(module_name, time.time() - start_time)
                 return []
             results = await module.search(request)
+            elapsed = time.time() - start_time
+
+            # v6: Record performance
+            if results:
+                # Estimate quality score from results
+                avg_rel = sum(r.relevance for r in results) / len(results) if results else 0
+                perf_tracker.record_success(
+                    module_name, elapsed, len(results), avg_rel
+                )
+            else:
+                perf_tracker.record_failure(module_name, elapsed)
+
             return results
         except Exception:
+            elapsed = time.time() - start_time
+            perf_tracker.record_failure(module_name, elapsed)
             return []
 
 

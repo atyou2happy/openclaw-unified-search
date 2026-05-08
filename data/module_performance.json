@@ -1,0 +1,14 @@
+{
+  "github": {
+    "name": "github",
+    "total_requests": 2,
+    "successful_requests": 1,
+    "avg_response_time": 0.34776719093322755,
+    "avg_result_count": 0.30000000000000004,
+    "avg_quality_score": 0.03766666666666667,
+    "consecutive_failures": 1,
+    "last_success_time": 1778247627.919028,
+    "last_failure_time": 1778247627.9361384,
+    "success_rate_7d": 0.5
+  }
+}

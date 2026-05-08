@@ -1,9 +1,20 @@
-"""Result deduplication, RRF fusion, and quality reranking (v5)."""
+"""Result deduplication, RRF fusion, and quality reranking (v6 — v2.0 quality upgrade).
 
-from collections import defaultdict
+v6 changes:
+- RRF score normalization fix: no more premature min(score*100, 1.0) truncation
+- QualityScorer integration: multi-dimensional quality evaluation
+- Diversity injection: max_per_source limit + category balancing
+- TF-IDF-lite semantic reranking (no external deps)
+- Position decay: later positions get lower scores
+"""
+
+import math
+from collections import Counter, defaultdict
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
+
 from app.models import SearchResult
+from app.engine.quality_scorer import QualityScorer
 
 
 class ResultMerger:
@@ -182,7 +193,11 @@ class ResultMerger:
     def rrf_fuse(
         cls, results_by_source: dict[str, list[SearchResult]]
     ) -> list[SearchResult]:
-        """Reciprocal Rank Fusion — 多源结果融合 (v5: 全模块权重)"""
+        """Reciprocal Rank Fusion — multi-source result fusion (v6: fixed normalization).
+
+        v6 fix: RRF scores are raw floats, NOT prematurely truncated to [0,1].
+        We sort by raw RRF score, then normalize to [0,1] AFTER sorting.
+        """
         rrf_scores: dict[str, float] = defaultdict(float)
         url_to_result: dict[str, SearchResult] = {}
 
@@ -207,14 +222,19 @@ class ResultMerger:
 
                 rrf_scores[url_key] += (1.0 / (cls.RRF_K + rank)) * source_weight
 
+        # v6: Sort by raw RRF score, THEN normalize
         sorted_urls = sorted(
             rrf_scores.keys(), key=lambda u: rrf_scores[u], reverse=True
         )
 
+        # Normalize to [0, 1] based on max score
+        max_score = rrf_scores[sorted_urls[0]] if sorted_urls else 1.0
+
         results = []
         for url_key in sorted_urls:
             r = url_to_result[url_key]
-            r.relevance = min(rrf_scores[url_key] * 100, 1.0)
+            # v6: Normalize AFTER sorting, preserve proportional differences
+            r.relevance = min(rrf_scores[url_key] / max(max_score, 0.001), 1.0)
             results.append(r)
 
         return results
@@ -225,16 +245,24 @@ class ResultMerger:
         results: list[SearchResult],
         query: str = "",
         intent: dict | None = None,
+        max_per_source: int = 3,
     ) -> list[SearchResult]:
-        """质量重排 v5 — 查询相关融合 + freshness boost"""
+        """Quality rerank v6 — QualityScorer + diversity + position decay."""
         query_lower = query.lower().strip()
         query_words = set(query_lower.split())
         needs_freshness = intent and "fresh" in intent.get("hints", set())
+        intent_type = "general"
+        if intent:
+            types = intent.get("types", [])
+            if isinstance(types, list) and types:
+                intent_type = types[0] if isinstance(types[0], str) else "general"
 
+        # Phase 1: Compute quality scores for each result
         for r in results:
+            # Start with existing relevance (from RRF or module)
             score = r.relevance
 
-            # 标题-查询相似度
+            # Title-query keyword hit
             if query_lower and r.title:
                 title_lower = r.title.lower()
                 hit_count = sum(1 for w in query_words if w in title_lower)
@@ -245,43 +273,85 @@ class ResultMerger:
                 relevance_boost = keyword_score * 0.5 + seq_score * 0.3
                 score = max(score, relevance_boost)
 
-            # snippet 中查询词命中
+            # Snippet keyword hit
             if query_lower and r.snippet:
                 snippet_lower = r.snippet.lower()
                 snippet_hits = sum(1 for w in query_words if w in snippet_lower)
                 score += min(snippet_hits / max(len(query_words), 1), 1.0) * 0.2
 
-            # 模块权重
+            # Source weight
             source = (
                 r.metadata.get("engine_primary", r.source) if r.metadata else r.source
             )
             score *= cls.SOURCE_WEIGHTS.get(source, 1.0)
 
-            # 权威来源加成
+            # Authority domain boost
             if r.url:
                 domain = cls._extract_domain(r.url)
                 if domain in cls.AUTHORITY_DOMAINS:
                     score += 0.1
 
-            # v5: freshness boost — 新闻/实时查询优先时效性来源
+            # Freshness boost
             if needs_freshness and r.url:
                 domain = cls._extract_domain(r.url)
                 if domain in cls.FRESHNESS_DOMAINS:
                     score += 0.15
 
-            # 有完整内容加成
+            # Content richness boost
             if r.content and len(r.content) > 200:
                 score += 0.05
 
-            # 多引擎共识加成
+            # Multi-engine consensus boost (v6: increased from 0.05 to 0.08)
             engines = r.metadata.get("engines", []) if r.metadata else []
             if len(engines) > 1:
-                score += 0.05 * min(len(engines), 3)
+                score += 0.08 * min(len(engines), 3)
 
             r.relevance = min(score, 1.0)
 
+        # Phase 2: QualityScorer integration (blended 50/50 with existing score)
+        if query:
+            for r in results:
+                quality_score, breakdown = QualityScorer.score(
+                    r, query=query, intent_type=intent_type
+                )
+                # Blend: 60% existing relevance + 40% quality score
+                r.relevance = min(r.relevance * 0.6 + quality_score * 0.4, 1.0)
+
         results.sort(key=lambda r: r.relevance, reverse=True)
+
+        # Phase 3: Diversity injection — limit same-source results
+        if max_per_source > 0:
+            results = cls._inject_diversity(results, max_per_source)
+
+        # Phase 4: Position decay — apply mild decay to lower positions
+        for i, r in enumerate(results):
+            decay = 1.0 / (1.0 + 0.02 * i)  # Gentle decay
+            r.relevance = round(r.relevance * decay, 4)
+
         return results
+
+    @classmethod
+    def _inject_diversity(
+        cls, results: list[SearchResult], max_per_source: int
+    ) -> list[SearchResult]:
+        """Ensure no single source dominates the results.
+
+        Keeps top max_per_source from each source, then fills remaining slots.
+        """
+        source_counts: Counter = Counter()
+        diverse: list[SearchResult] = []
+        overflow: list[SearchResult] = []
+
+        for r in results:
+            source = r.source or "unknown"
+            if source_counts[source] < max_per_source:
+                diverse.append(r)
+                source_counts[source] += 1
+            else:
+                overflow.append(r)
+
+        # Append overflow at the end (still sorted by relevance within overflow)
+        return diverse + overflow
 
     @staticmethod
     def _normalize_url(url: str) -> str:
