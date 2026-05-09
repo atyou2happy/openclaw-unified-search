@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🔍 OpenClaw Unified Search</h1>
   <p align="center">
-    <b>Smart Unified Search Service — 38 Modules + 7 CDP AI Agents + Browser Agent + Quality Relevance</b><br/>
+    <b>Smart Unified Search Service — 45 Modules + 7 CDP AI Agents + BM25 Ranking + Adaptive RRF + Quality Relevance</b><br/>
     English | <a href="README_CN.md">中文</a>
   </p>
 </p>
@@ -17,8 +17,13 @@ A modular, unified search service designed for [OpenClaw](https://github.com/ope
 - 🔄 **Quality Fallback** — Auto-degrade from best to next-best AI agent on failure
 - 🔀 **RRF Fusion** — Reciprocal Rank Fusion for multi-source result merging
 - 🧠 **Smart Routing** — Intent detection + adaptive module count (3-8 based on query complexity)
-- 🧩 **38 Modules** — 7 CDP AI agents + 28 traditional (including Reddit, DevTo, Crossref, DBLP, Wikipedia, Vane)
-- 🧠 **Smart Dedup** — URL dedup + title similarity + metadata merge
+- 🧩 **45 Modules** — 7 CDP AI agents + 38 traditional (including Reddit, DevTo, Crossref, DBLP, Wikipedia, Vane)
+- 🔎 **BM25 Ranking** — Okapi BM25 text matching replaces SequenceMatcher for better relevance
+- 🔀 **Adaptive RRF** — Reciprocal Rank Fusion with adaptive k-value + multi-engine consensus boost
+- 🔒 **SimHash Dedup** — Content-level near-duplicate detection via 64-bit SimHash fingerprints
+- 📊 **Dynamic Weights** — Module source weights auto-tuned from performance tracker data
+- 🏷️ **Result Clustering** — N-gram single-pass clustering for topic grouping
+- 🧠 **Smart Dedup** — URL dedup + title similarity + SimHash content dedup + metadata merge
 - 💾 **LRU Cache** — Configurable TTL, avoids redundant searches
 - 🔌 **Zero-Barrier Extension** — Add new modules by implementing `BaseSearchModule`
 - 🎯 **Smart Relevance (v0.5.0)** — SequenceMatcher + keyword hit scoring, no more fixed relevance
@@ -220,6 +225,16 @@ openclaw-unified-search/
 
 
 ## 📋 Changelog
+
+### v3.0.0 (2026-05-09) — Search Quality Deep Upgrade
+
+- 🔎 **BM25 Text Matching**: Replaced SequenceMatcher with Okapi BM25 for query-document relevance scoring
+- 🔀 **Adaptive RRF**: k-value auto-tuned by result set size; multi-engine consensus boost for cross-source agreement
+- 🔒 **SimHash Dedup**: 64-bit content fingerprinting detects near-duplicate results across different sources
+- 📊 **Dynamic Weights**: Module SOURCE_WEIGHTS auto-tuned from PerformanceTracker success/quality/speed data
+- 🧠 **Query Intelligence**: Term importance weighting, acronym expansion (48 tech acronyms), query variant generation
+- 🏷️ **Result Clustering**: N-gram single-pass clustering auto-groups results by topic for better information consumption
+- ⚡ 189 tests passing (63 new), 2 new engine modules (text_scorer, result_clustering), 4 enhanced engines
 
 ### v1.0.0 (2026-05-07) — Architecture Refactoring
 

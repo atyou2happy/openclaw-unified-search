@@ -25,8 +25,13 @@ logger = logging.getLogger(__name__)
 class SearchEngine:
     """智能调度搜索引擎 v4 — 真并行 + 质量优先 + RRF 融合"""
 
+    # v3.0: Dynamic weight update interval (every N searches)
+    _WEIGHT_UPDATE_INTERVAL = 100
+    _DYNAMIC_WEIGHTS_ENABLED = True
+
     def __init__(self):
         self._modules: dict[str, BaseSearchModule] = {}
+        self._search_count: int = 0
 
     def load_modules(self):
         from app.modules import get_all
@@ -342,6 +347,14 @@ class SearchEngine:
             },
         )
 
+        # v3.0: Periodic dynamic weight update
+        self._search_count += 1
+        if (
+            self._DYNAMIC_WEIGHTS_ENABLED
+            and self._search_count % self._WEIGHT_UPDATE_INTERVAL == 0
+        ):
+            self._update_dynamic_weights()
+
         return response
 
     async def search_module(
@@ -416,6 +429,52 @@ class SearchEngine:
             elapsed = time.time() - start_time
             perf_tracker.record_failure(module_name, elapsed)
             return []
+
+    def _update_dynamic_weights(self) -> None:
+        """v3.0: Update SOURCE_WEIGHTS based on module performance.
+
+        Uses PerformanceTracker.get_dynamic_weight() which considers
+        success rate, quality score, and response speed.
+
+        Modules need at least 5 calls before dynamic adjustment.
+        Weight changes > 20% are logged as WARNING.
+        """
+        from app.engine.merger import ResultMerger
+
+        updated_count = 0
+        for name in self._modules:
+            base_weight = ResultMerger.SOURCE_WEIGHTS.get(name, 1.0)
+            perf = perf_tracker.get_performance(name)
+
+            # Skip modules with insufficient data
+            if perf.total_requests < 5:
+                continue
+
+            # Use existing dynamic weight computation
+            new_weight = perf_tracker.get_dynamic_weight(name, base_weight)
+            new_weight = round(new_weight, 2)
+
+            # Only update if change is significant (> 5%)
+            old_weight = ResultMerger.SOURCE_WEIGHTS.get(name, base_weight)
+            change_pct = abs(new_weight - old_weight) / max(old_weight, 0.01)
+
+            if change_pct > 0.05:
+                if change_pct > 0.2:
+                    logger.warning(
+                        "Dynamic weight for %s: %.2f → %.2f (%.0f%% change, sr=%.2f, q=%.2f)",
+                        name, old_weight, new_weight, change_pct * 100,
+                        perf.success_rate, perf.avg_quality_score,
+                    )
+                else:
+                    logger.info(
+                        "Dynamic weight for %s: %.2f → %.2f",
+                        name, old_weight, new_weight,
+                    )
+                ResultMerger.SOURCE_WEIGHTS[name] = new_weight
+                updated_count += 1
+
+        if updated_count > 0:
+            logger.info("Dynamic weights updated: %d modules", updated_count)
 
 
 # Global instance

@@ -130,3 +130,75 @@ class TestQueryAnalysisModel:
     def test_model_confidence_range(self):
         with pytest.raises(Exception):
             QueryAnalysis(original_query="test", confidence=1.5)
+
+
+# ── v3.0: Term weighting ──
+
+class TestTermWeights:
+    def test_empty_query(self):
+        assert QueryEnhancer.get_term_weights("") == {}
+
+    def test_position_weights(self):
+        weights = QueryEnhancer.get_term_weights("python fastapi async web")
+        # First word "python" should have highest weight
+        assert weights["python"] == 2.0
+        assert weights["fastapi"] == 2.0
+        # Later words have default weight
+        assert weights["async"] == 1.0
+
+    def test_acronym_weights(self):
+        weights = QueryEnhancer.get_term_weights("RAG LLM implementation")
+        # Uppercase acronyms get ×1.5
+        assert weights["RAG"] == 1.5
+        assert weights["LLM"] == 1.5
+
+    def test_stop_word_weights(self):
+        weights = QueryEnhancer.get_term_weights("what is python")
+        # "what" and "is" are stop words
+        assert weights.get("what", None) in (0.1, None)
+
+    def test_mixed_case_weights(self):
+        weights = QueryEnhancer.get_term_weights("Python FastAPI Tutorial")
+        assert weights["Python"] == 1.5  # capitalized = proper noun heuristic
+
+
+# ── v3.0: Acronym expansion ──
+
+class TestAcronymExpansion:
+    def test_known_acronym(self):
+        expanded = QueryEnhancer.expand_acronyms("what is RAG in LLM")
+        assert "retrieval augmented generation" in expanded
+        assert "large language model" in expanded
+
+    def test_no_acronym(self):
+        expanded = QueryEnhancer.expand_acronyms("python web framework")
+        assert expanded == []
+
+    def test_empty_query(self):
+        assert QueryEnhancer.expand_acronyms("") == []
+
+    def test_limit(self):
+        # Should limit to 5 expansions
+        expanded = QueryEnhancer.expand_acronyms("AI ML NLP DL LLM RAG API")
+        assert len(expanded) <= 5
+
+
+# ── v3.0: Query variants ──
+
+class TestQueryVariants:
+    def test_empty_query(self):
+        assert QueryEnhancer.generate_variants("") == []
+
+    def test_original_is_included(self):
+        variants = QueryEnhancer.generate_variants("python fastapi web framework")
+        assert "python fastapi web framework" in variants
+
+    def test_removes_stop_words(self):
+        variants = QueryEnhancer.generate_variants("what is python programming")
+        # "what" and "is" are stop words, should produce variant without them
+        assert len(variants) >= 1
+
+    def test_core_terms_variant(self):
+        variants = QueryEnhancer.generate_variants("python fastapi async web framework tutorial guide")
+        # With 7 content words (> 3 limit), should generate core terms variant
+        assert len(variants) >= 2

@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🔍 OpenClaw 统一搜索</h1>
   <p align="center">
-    <b>智能统一搜索服务 — 24 个模块 + 7 个 CDP AI 代理 + 质量降级策略</b><br/>
+    <b>智能统一搜索服务 — 45 个模块 + BM25 排序 + 自适应 RRF + SimHash 去重 + 结果聚类 + 动态权重</b><br/>
     <a href="README.md">English</a> | 中文
   </p>
 </p>
@@ -210,8 +210,23 @@ openclaw-unified-search/
 - **Python 3.12** + FastAPI + httpx + pydantic v2
 - **Chrome DevTools Protocol** — 通过 TabBitBrowser 与 AI 代理交互
 - **asyncio.wait(FIRST_COMPLETED)** — 真并行模块执行
-- **Reciprocal Rank Fusion** — 多源结果合并
-- **websockets** — CDP 通信（消息 ID 过滤）
+- **Okapi BM25** — 文本匹配排序（替代 SequenceMatcher）
+- **Reciprocal Rank Fusion** — 自适应 k 值 + 多引擎共识增强
+- **SimHash 64-bit** — 内容指纹近重复检测
+- **N-gram 单遍聚类** — 实时搜索结果分组
+- **动态权重** — 基于模块表现的 SOURCE_WEIGHTS 自动调优
+
+## 📋 更新日志
+
+### v3.0.0 (2026-05-09) — 搜索质量深度升级
+
+- 🔎 **BM25 排序**：Okapi BM25 替代 SequenceMatcher，提升文本相关性
+- 🔀 **自适应 RRF**：k 值根据结果集大小自动调整，多引擎共识增强
+- 🔒 **SimHash 去重**：64 位内容指纹检测跨源近重复
+- 📊 **动态权重**：SOURCE_WEIGHTS 根据成功率/质量/速度自动调整
+- 🧠 **查询智能**：词权重、缩写展开（48 个技术缩写）、查询变体
+- 🏷️ **结果聚类**：N-gram 单遍聚类自动按主题分组
+- ⚡ 189 个测试通过（新增 63 个），2 个新引擎模块，4 个增强引擎
 
 ## 📄 许可证
 

@@ -463,3 +463,160 @@ class QueryEnhancer:
 
         # Limit rewrites to avoid overloading engines
         return rewrites[:3]
+
+    # ── v3.0: Term weighting + acronym expansion + query variants ──
+
+    # Stop words for term weighting (English + Chinese)
+    _TERM_STOP_WORDS: set[str] = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been",
+        "have", "has", "had", "do", "does", "did", "will", "would",
+        "could", "should", "may", "might", "shall", "can",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "how", "what", "why", "when", "where", "who", "which",
+        "and", "or", "not", "but", "if", "then", "else",
+        "this", "that", "it", "its", "they", "them", "their",
+        "的", "了", "在", "是", "我", "有", "和", "就", "不",
+        "都", "一", "也", "很", "到", "说", "要", "去",
+        "你", "会", "着", "没有", "看", "好", "自己", "这", "那",
+    }
+
+    @classmethod
+    def get_term_weights(cls, query: str) -> dict[str, float]:
+        """Assign importance weights to query terms.
+
+        Rules:
+        - First 2 content words: ×2.0 (likely the main topic)
+        - ALL-CAPS/Uppercase words: ×1.5 (likely proper nouns/acronyms)
+        - Stop words: ×0.1
+        - Default: ×1.0
+        """
+        if not query:
+            return {}
+
+        weights: dict[str, float] = {}
+        tokens = query.split()
+
+        for i, token in enumerate(tokens):
+            t = token.strip().lower()
+            if not t:
+                continue
+
+            # Stop word → very low weight
+            if t in cls._TERM_STOP_WORDS:
+                weights[token] = 0.1
+                continue
+
+            # Proper noun heuristic: all uppercase or starts with uppercase
+            if token.isupper() or (token[0].isupper() and len(token) > 1):
+                weights[token] = 1.5
+                continue
+
+            # First 2 content words → high weight
+            if i < 2:
+                weights[token] = 2.0
+                continue
+
+            weights[token] = 1.0
+
+        return weights
+
+    @classmethod
+    def expand_acronyms(cls, query: str) -> list[str]:
+        """Detect and expand acronyms in query.
+
+        Heuristic: sequences of 2+ consecutive uppercase letters.
+        """
+        if not query:
+            return []
+
+        expanded: list[str] = []
+
+        # Common acronym mappings
+        _ACRONYMS: dict[str, list[str]] = {
+            "AI": ["artificial intelligence"],
+            "ML": ["machine learning"],
+            "NLP": ["natural language processing"],
+            "DL": ["deep learning"],
+            "LLM": ["large language model", "llm"],
+            "RAG": ["retrieval augmented generation"],
+            "API": ["application programming interface"],
+            "CLI": ["command line interface"],
+            "CI": ["continuous integration"],
+            "CD": ["continuous deployment", "continuous delivery"],
+            "K8S": ["kubernetes"],
+            "DB": ["database"],
+            "SQL": ["structured query language"],
+            "OS": ["operating system"],
+            "IDE": ["integrated development environment"],
+            "SRE": ["site reliability engineering"],
+            "TDD": ["test driven development"],
+            "DDD": ["domain driven design"],
+            "ORM": ["object relational mapping"],
+            "MVC": ["model view controller"],
+            "SSR": ["server side rendering"],
+            "CSR": ["client side rendering"],
+            "SSG": ["static site generation"],
+            "JWT": ["json web token"],
+            "OAuth": ["open authorization"],
+            "RBAC": ["role based access control"],
+            "CORS": ["cross origin resource sharing"],
+            "DNS": ["domain name system"],
+            "HTTP": ["hypertext transfer protocol"],
+            "HTTPS": ["http secure"],
+            "TCP": ["transmission control protocol"],
+            "UDP": ["user datagram protocol"],
+            "VPN": ["virtual private network"],
+            "GPU": ["graphics processing unit"],
+            "CPU": ["central processing unit"],
+            "SSD": ["solid state drive"],
+            "RAM": ["random access memory"],
+            "PDF": ["portable document format"],
+            "CSV": ["comma separated values"],
+            "JSON": ["javascript object notation"],
+            "XML": ["extensible markup language"],
+            "YAML": ["yaml ain't markup language"],
+            "HTML": ["hypertext markup language"],
+            "CSS": ["cascading style sheets"],
+            "DOM": ["document object model"],
+            "URL": ["uniform resource locator"],
+            "URI": ["uniform resource identifier"],
+        }
+
+        for acronym, expansions in _ACRONYMS.items():
+            if acronym in query:
+                for exp in expansions:
+                    expanded.append(exp)
+
+        return expanded[:5]
+
+    @classmethod
+    def generate_variants(cls, query: str) -> list[str]:
+        """Generate query variants for fallback search.
+
+        Variants:
+        1. Original query
+        2. Remove stop words
+        3. Core terms only (top 3 weighted terms)
+        """
+        if not query:
+            return []
+
+        variants: list[str] = [query]
+        weights = cls.get_term_weights(query)
+
+        # Variant 2: remove stop words
+        tokens = query.split()
+        meaningful = [t for t in tokens if weights.get(t, 1.0) > 0.2]
+        if meaningful and len(meaningful) < len(tokens):
+            v2 = " ".join(meaningful)
+            if v2 != query:
+                variants.append(v2)
+
+        # Variant 3: core terms only (top 3 weighted)
+        if len(meaningful) > 3:
+            sorted_tokens = sorted(meaningful, key=lambda t: weights.get(t, 1.0), reverse=True)
+            v3 = " ".join(sorted_tokens[:3])
+            if v3 not in variants:
+                variants.append(v3)
+
+        return variants

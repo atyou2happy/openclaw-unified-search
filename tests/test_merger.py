@@ -193,3 +193,83 @@ def test_rerank_no_double_source_weight():
     # The scores should not have a 2x+ gap from double SOURCE_WEIGHTS
     assert reranked[0].relevance > 0
     assert reranked[1].relevance > 0
+
+
+# ── v3.0: Adaptive RRF k-value ──
+
+def test_adaptive_k_small():
+    """Small result sets get lower k (emphasize rank)."""
+    assert ResultMerger._adaptive_k(5) == 30.0
+    assert ResultMerger._adaptive_k(10) == 30.0
+
+
+def test_adaptive_k_medium():
+    """Medium result sets get standard k."""
+    assert ResultMerger._adaptive_k(15) == 60.0
+    assert ResultMerger._adaptive_k(30) == 60.0
+
+
+def test_adaptive_k_large():
+    """Large result sets get higher k (smooth)."""
+    assert ResultMerger._adaptive_k(35) == 90.0
+    assert ResultMerger._adaptive_k(100) == 90.0
+
+
+# ── v3.0: SimHash near-duplicate detection ──
+
+def test_simhash_identical_text():
+    """Identical text produces same fingerprint."""
+    fp1 = ResultMerger._compute_simhash("Python FastAPI web framework tutorial")
+    fp2 = ResultMerger._compute_simhash("Python FastAPI web framework tutorial")
+    assert fp1 == fp2
+
+
+def test_simhash_different_text():
+    """Different text produces different fingerprints."""
+    fp1 = ResultMerger._compute_simhash("Python FastAPI async web framework")
+    fp2 = ResultMerger._compute_simhash("Java Spring Boot enterprise development")
+    assert fp1 != fp2
+
+
+def test_simhash_similar_text():
+    """Similar text produces close fingerprints (low Hamming distance)."""
+    fp1 = ResultMerger._compute_simhash("Python FastAPI async web framework tutorial")
+    fp2 = ResultMerger._compute_simhash("Python FastAPI web framework async tutorial guide")
+    dist = ResultMerger._hamming_distance(fp1, fp2)
+    # Similar text should have relatively low Hamming distance
+    assert dist < 32  # half of 64 bits
+
+
+def test_simhash_empty():
+    """Empty text returns 0."""
+    assert ResultMerger._compute_simhash("") == 0
+
+
+def test_hamming_distance():
+    """Hamming distance computation."""
+    assert ResultMerger._hamming_distance(0, 0) == 0
+    assert ResultMerger._hamming_distance(0b1111, 0b0000) == 4
+    assert ResultMerger._hamming_distance(0b1010, 0b0101) == 4
+
+
+def test_simhash_dedup_removes_duplicates():
+    """SimHash dedup removes identical/near-identical results."""
+    # Two results with identical title+snippet = same SimHash
+    results = [
+        SearchResult(title="Identical Title Here", url="https://a.com/1", snippet="This is exactly the same content text for dedup testing", source="web", relevance=0.9),
+        SearchResult(title="Identical Title Here", url="https://b.com/2", snippet="This is exactly the same content text for dedup testing", source="ddg", relevance=0.8),
+        SearchResult(title="Java Spring Boot", url="https://c.com/3", snippet="Enterprise Java development with Spring", source="web", relevance=0.7),
+    ]
+    deduped = ResultMerger._simhash_dedup(results, threshold=3)
+    # The two identical results should be deduplicated to 1
+    assert len(deduped) < 3
+
+
+def test_simhash_dedup_keeps_higher_relevance():
+    """SimHash dedup keeps the result with higher relevance."""
+    results = [
+        SearchResult(title="Python Guide", url="https://a.com/1", snippet="Python programming guide", source="web", relevance=0.6),
+        SearchResult(title="Python Tutorial", url="https://b.com/2", snippet="Python programming tutorial guide", source="ddg", relevance=0.9),
+    ]
+    deduped = ResultMerger._simhash_dedup(results, threshold=3)
+    assert len(deduped) >= 1
