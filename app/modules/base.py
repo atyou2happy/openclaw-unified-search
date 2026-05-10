@@ -34,8 +34,13 @@ class BaseSearchModule(ABC):
     # HTTP client pool (v1.0.0)
     # ============================================================
 
+    # Set True in subclasses that connect to localhost services (bypasses proxy)
+    _skip_proxy: bool = False
+
     def _get_proxy_url(self) -> str | None:
         """Get proxy URL from config. Override in subclasses if needed."""
+        if self._skip_proxy:
+            return None
         from app.config import Config
         return Config.get_proxy()
 

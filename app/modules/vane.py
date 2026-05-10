@@ -24,6 +24,7 @@ class VaneModule(BaseSearchModule):
 
     name = "vane"
     description = "Vane AI 搜索引擎（Perplexica，34K⭐，自托管）"
+    _skip_proxy = True  # Localhost Perplexica
 
     async def health_check(self) -> bool:
         try:

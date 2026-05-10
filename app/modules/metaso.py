@@ -12,6 +12,7 @@ class MetasoModule(BaseSearchModule):
     name = "metaso"
     description = "秘塔AI搜索（中文最强，支持简洁/深入/研究模式）"
     BASE_URL = "http://127.0.0.1:8000"
+    _skip_proxy = True  # Localhost Docker service
 
     def _get_token(self) -> str:
         return os.environ.get("METASO_TOKEN", "")

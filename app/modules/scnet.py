@@ -208,8 +208,9 @@ def _extract_value(cdp_result):
     return cdp_result.get("result", {}).get("result", {}).get("value", "")
 
 
-class ScnetModule(BaseSearchModule):
+class SCNetModule(BaseSearchModule):
     name = "scnet"
+    _skip_proxy = True  # Localhost CDP
     description = "超算互联网 AI 助手（SCNet Chatbot，深度思考+联网，CDP）"
 
     def __init__(self):

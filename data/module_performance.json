@@ -1,15 +1,15 @@
 {
   "github": {
     "name": "github",
-    "total_requests": 21,
-    "successful_requests": 6,
-    "avg_response_time": 0.9296080003233511,
-    "avg_result_count": 1.4056770000000003,
-    "avg_quality_score": 0.28931389,
+    "total_requests": 32,
+    "successful_requests": 8,
+    "avg_response_time": 2.751286238291688,
+    "avg_result_count": 2.40859837,
+    "avg_quality_score": 0.24292425090000003,
     "consecutive_failures": 1,
-    "last_success_time": 1778300590.1974096,
-    "last_failure_time": 1778300601.857043,
-    "success_rate_7d": 0.2857142857142857
+    "last_success_time": 1778342229.1961606,
+    "last_failure_time": 1778422921.8675425,
+    "success_rate_7d": 0.25
   },
   "academic": {
     "name": "academic",
@@ -25,26 +25,26 @@
   },
   "tabbit": {
     "name": "tabbit",
-    "total_requests": 0,
+    "total_requests": 5,
     "successful_requests": 0,
-    "avg_response_time": 0.0,
+    "avg_response_time": 0.1059370752978325,
     "avg_result_count": 0.0,
     "avg_quality_score": 0.0,
-    "consecutive_failures": 0,
+    "consecutive_failures": 5,
     "last_success_time": 0.0,
-    "last_failure_time": 0.0,
+    "last_failure_time": 1778422829.488961,
     "success_rate_7d": 0.0
   },
   "stackoverflow": {
     "name": "stackoverflow",
-    "total_requests": 11,
+    "total_requests": 12,
     "successful_requests": 0,
-    "avg_response_time": 1.5850571055180722,
+    "avg_response_time": 1.6444706731111014,
     "avg_result_count": 0.0,
     "avg_quality_score": 0.0,
-    "consecutive_failures": 1,
+    "consecutive_failures": 2,
     "last_success_time": 0.0,
-    "last_failure_time": 1778300592.2040203,
+    "last_failure_time": 1778342227.1925862,
     "success_rate_7d": 0.0
   },
   "devto": {
@@ -61,39 +61,39 @@
   },
   "searxng": {
     "name": "searxng",
-    "total_requests": 0,
+    "total_requests": 5,
     "successful_requests": 0,
-    "avg_response_time": 0.0,
+    "avg_response_time": 0.5990747549080849,
     "avg_result_count": 0.0,
     "avg_quality_score": 0.0,
-    "consecutive_failures": 0,
+    "consecutive_failures": 5,
     "last_success_time": 0.0,
-    "last_failure_time": 0.0,
+    "last_failure_time": 1778422829.590801,
     "success_rate_7d": 0.0
   },
   "web": {
     "name": "web",
-    "total_requests": 3,
-    "successful_requests": 0,
-    "avg_response_time": 2.6988419532775882,
-    "avg_result_count": 0.0,
-    "avg_quality_score": 0.0,
+    "total_requests": 38,
+    "successful_requests": 11,
+    "avg_response_time": 5.391278715161499,
+    "avg_result_count": 2.9708764117300004,
+    "avg_quality_score": 0.480332582737,
     "consecutive_failures": 3,
-    "last_success_time": 0.0,
-    "last_failure_time": 1778299720.8490834,
-    "success_rate_7d": 0.0
+    "last_success_time": 1778422832.3966346,
+    "last_failure_time": 1778422926.957741,
+    "success_rate_7d": 0.2894736842105263
   },
   "ddg": {
     "name": "ddg",
-    "total_requests": 25,
-    "successful_requests": 10,
-    "avg_response_time": 6.802190034222297,
-    "avg_result_count": 6.5132155990000005,
-    "avg_quality_score": 0.45592509193,
-    "consecutive_failures": 5,
-    "last_success_time": 1778285715.8358655,
-    "last_failure_time": 1778300598.1850276,
-    "success_rate_7d": 0.4
+    "total_requests": 34,
+    "successful_requests": 11,
+    "avg_response_time": 7.185526968950728,
+    "avg_result_count": 6.861894039100001,
+    "avg_quality_score": 0.480332582737,
+    "consecutive_failures": 1,
+    "last_success_time": 1778422853.2542543,
+    "last_failure_time": 1778422927.5469017,
+    "success_rate_7d": 0.3235294117647059
   },
   "bing": {
     "name": "bing",
@@ -154,5 +154,29 @@
     "last_success_time": 1778299706.3661106,
     "last_failure_time": 0.0,
     "success_rate_7d": 1.0
+  },
+  "wikipedia": {
+    "name": "wikipedia",
+    "total_requests": 1,
+    "successful_requests": 1,
+    "avg_response_time": 0.1860426187515259,
+    "avg_result_count": 1.0,
+    "avg_quality_score": 0.0,
+    "consecutive_failures": 0,
+    "last_success_time": 1778422834.489266,
+    "last_failure_time": 0.0,
+    "success_rate_7d": 1.0
+  },
+  "jina": {
+    "name": "jina",
+    "total_requests": 0,
+    "successful_requests": 0,
+    "avg_response_time": 0.0,
+    "avg_result_count": 0.0,
+    "avg_quality_score": 0.0,
+    "consecutive_failures": 0,
+    "last_success_time": 0.0,
+    "last_failure_time": 0.0,
+    "success_rate_7d": 0.0
   }
 }

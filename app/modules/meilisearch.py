@@ -13,6 +13,7 @@ INDEX_NAME = "wiki"
 
 class MeilisearchModule(BaseSearchModule):
     name = "meilisearch"
+    _skip_proxy = True  # Localhost Meilisearch
     description = "本地知识库搜索（Meilisearch，459篇wiki，毫秒级）"
 
     async def health_check(self) -> bool:

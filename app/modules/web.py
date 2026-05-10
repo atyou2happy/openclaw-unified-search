@@ -3,6 +3,9 @@
 import asyncio
 import logging
 import sys
+
+import httpx
+
 from app.config import Config
 from app.models import SearchRequest, SearchResult
 from app.modules.base import BaseSearchModule
@@ -17,13 +20,22 @@ class WebSearchModule(BaseSearchModule):
     def __init__(self):
         super().__init__()
         self._tabbit_available: bool | None = None
+        self._local_client: httpx.AsyncClient | None = None
+
+    async def _get_local_client(self, timeout: int = 5) -> httpx.AsyncClient:
+        """Get httpx client WITHOUT proxy for localhost connections."""
+        if self._local_client is None or self._local_client.is_closed:
+            self._local_client = httpx.AsyncClient(
+                timeout=timeout, trust_env=False, follow_redirects=True,
+            )
+        return self._local_client
 
     async def health_check(self) -> bool:
         return await self._check_tabbit() or await self._check_searxng()
 
     async def _check_tabbit(self) -> bool:
         try:
-            client = await self.get_http_client(timeout=5)
+            client = await self._get_local_client(timeout=5)
             resp = await client.get(
                 f"http://localhost:{Config.TABBIT_CDP_PORT}/json",
             )
@@ -33,12 +45,12 @@ class WebSearchModule(BaseSearchModule):
 
     async def _check_searxng(self) -> bool:
         try:
-            client = await self.get_http_client(timeout=3)
+            client = await self._get_local_client(timeout=3)
             resp = await client.get("http://localhost:8080/healthz")
             return resp.status_code == 200
         except Exception:
             try:
-                client = await self.get_http_client(timeout=3)
+                client = await self._get_local_client(timeout=3)
                 resp = await client.get("http://localhost:8080/")
                 return resp.status_code == 200
             except Exception:
@@ -118,7 +130,7 @@ class WebSearchModule(BaseSearchModule):
     async def _search_searxng(self, request: SearchRequest) -> list[SearchResult]:
         """SearXNG 聚合搜索（247+ 引擎，稳定快速）"""
         try:
-            client = await self.get_http_client(timeout=8)
+            client = await self._get_local_client(timeout=8)
             language = "zh-CN" if request.language in ("zh", "auto") else "en-US"
             resp = await client.get(
                 "http://localhost:8080/search",

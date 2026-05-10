@@ -209,6 +209,11 @@ async def cdp_close_tab(target_id: str) -> bool:
     return await cdp_pool.close_tab(target_id)
 
 
+# Aliases for direct import convenience (used by CDP AI modules)
+create_tab = cdp_create_tab
+close_tab = cdp_close_tab
+
+
 def reset_cache():
     """Reset CDP availability cache (backward compat wrapper)."""
     cdp_pool.reset_cache()

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class TabBitModule(BaseSearchModule):
     name = "tabbit"
+    _skip_proxy = True  # Localhost CDP
     description = "TabBitBrowser AI 搜索（本地 CDP，质量最高）"
 
     def __init__(self):
